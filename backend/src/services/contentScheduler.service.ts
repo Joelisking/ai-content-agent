@@ -238,6 +238,17 @@ export class ContentSchedulerService {
         .map((c) => c.content.text)
         .filter(Boolean);
 
+      // Fetch available media
+      const availableMedia = await MediaUpload.find({
+        $or: [
+          { brandId: task.brandId },
+          { brandId: { $exists: false } },
+          { brandId: null },
+        ],
+      })
+        .sort({ uploadedAt: -1 })
+        .limit(20);
+
       // Generate content using AI agent
       const generated = await aiAgent.generateContent({
         brandConfig: brand,
@@ -245,6 +256,8 @@ export class ContentSchedulerService {
         userPrompt: schedule?.promptTemplate,
         previousContent,
         generateImage: schedule?.autoGenerateImage || false,
+        availableMedia:
+          availableMedia.length > 0 ? availableMedia : undefined,
       });
 
       // Update content with generated text
@@ -288,6 +301,14 @@ export class ContentSchedulerService {
         updateData['metadata.generatedImageUrl'] = generatedImageUrl;
         updateData['metadata.imagePrompt'] = imagePrompt;
         updateData['content.mediaIds'] = [generatedMediaId];
+      } else if (generated.selectedMediaId) {
+        // Handle agent-selected media
+        console.log(
+          `[SCHEDULER] 🔗 Attaching agent-selected media ${generated.selectedMediaId}...`,
+        );
+        updateData['content.mediaIds'] = [generated.selectedMediaId];
+        updateData['metadata.aiSelectedMediaId'] =
+          generated.selectedMediaId;
       }
 
       if (generated.imageError) {

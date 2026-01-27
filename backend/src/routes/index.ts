@@ -177,15 +177,42 @@ router.post(
         },
       );
 
+      // Analyze image using AI if it's an image
+      let autoMetadata = { description: '', tags: [] as string[] };
+      if (!isVideo) {
+        try {
+          // Pass the secure_url to the AI agent for analysis
+          autoMetadata = await aiAgent.analyzeImage(
+            cloudinaryResult.secure_url,
+          );
+        } catch (analysisError) {
+          console.error('Auto-analysis failed:', analysisError);
+        }
+      }
+
+      // Merge user provided metadata with auto-generated metadata
+      // User provided metadata takes precedence if provided (e.g. description)
+      const userMetadata = req.body.metadata
+        ? JSON.parse(req.body.metadata)
+        : {};
+
+      const finalMetadata = {
+        description:
+          userMetadata.description || autoMetadata.description,
+        tags: [
+          ...(autoMetadata.tags || []),
+          ...(userMetadata.tags || []),
+        ],
+      };
+
       const media = new MediaUpload({
         filename: cloudinaryResult.public_id,
         originalName: req.file.originalname,
         mimetype: req.file.mimetype,
         size: req.file.size,
         path: cloudinaryResult.secure_url,
-        metadata: req.body.metadata
-          ? JSON.parse(req.body.metadata)
-          : {},
+        brandId: req.body.brandId,
+        metadata: finalMetadata,
       });
 
       await media.save();
@@ -341,6 +368,19 @@ async function processGenerationAsync(contentId: string) {
 
     const previousContent = recentContent.map((c) => c.content.text);
 
+    // Fetch available media for the agent to consider
+    // We look for media uploaded for this brand, or global media (no brandId)
+    // We'll limit to the most recent 20 items to avoid overwhelming the context
+    const availableMedia = await MediaUpload.find({
+      $or: [
+        { brandId: content.brandConfigId },
+        { brandId: { $exists: false } },
+        { brandId: null },
+      ],
+    })
+      .sort({ uploadedAt: -1 })
+      .limit(20);
+
     // Generate content using AI agent
     const generateImageFlag =
       (content.metadata as any)?.generateImage || false;
@@ -358,6 +398,8 @@ async function processGenerationAsync(contentId: string) {
       userPrompt: (content.metadata as any)?.userPrompt || undefined,
       previousContent,
       generateImage: generateImageFlag,
+      availableMedia:
+        availableMedia.length > 0 ? availableMedia : undefined,
     });
 
     // If image was generated, save it to MediaUpload and attach to content
@@ -410,6 +452,26 @@ async function processGenerationAsync(contentId: string) {
       ) {
         updateData['content.mediaIds'] = [generatedMediaId];
         console.log('✅ Image attached to content.mediaIds');
+      }
+    } else if (generated.selectedMediaId) {
+      // If the agent selected an existing media item
+      console.log(
+        `🔗 Attaching agent-selected media ${generated.selectedMediaId} to content...`,
+      );
+
+      // Add to mediaIds if not already present
+      const currentMediaIds = content.content.mediaIds || [];
+      const currentIdsStr = currentMediaIds.map((id) =>
+        id.toString(),
+      );
+
+      if (!currentIdsStr.includes(generated.selectedMediaId)) {
+        updateData['content.mediaIds'] = [
+          ...currentMediaIds,
+          generated.selectedMediaId,
+        ];
+        updateData['metadata.aiSelectedMediaId'] =
+          generated.selectedMediaId;
       }
     }
 
@@ -498,22 +560,18 @@ router.post('/content/generate', async (req, res) => {
       (!mediaIds || mediaIds.length === 0) &&
       !generateImage
     ) {
-      return res
-        .status(400)
-        .json({
-          error:
-            'Instagram posts require at least one media item (or enable AI image generation)',
-        });
+      return res.status(400).json({
+        error:
+          'Instagram posts require at least one media item (or enable AI image generation)',
+      });
     }
 
     // Validate OpenAI API key if image generation is requested
     if (generateImage && !process.env.OPENAI_API_KEY) {
-      return res
-        .status(400)
-        .json({
-          error:
-            'AI image generation requires OPENAI_API_KEY to be configured',
-        });
+      return res.status(400).json({
+        error:
+          'AI image generation requires OPENAI_API_KEY to be configured',
+      });
     }
 
     // Platform-specific media limits

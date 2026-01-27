@@ -42,10 +42,12 @@ const BrandConfigSchema = new Schema<IBrandConfig>(
       },
       daysOfWeek: [{ type: Number, min: 0, max: 6 }], // 0=Sunday, 6=Saturday
       timesOfDay: [{ type: String }], // e.g., ['09:00', '15:00']
-      platforms: [{
-        type: String,
-        enum: ['linkedin', 'instagram', 'twitter', 'facebook'],
-      }],
+      platforms: [
+        {
+          type: String,
+          enum: ['linkedin', 'instagram', 'twitter', 'facebook'],
+        },
+      ],
       autoGenerateImage: { type: Boolean, default: false },
       promptTemplate: { type: String },
     },
@@ -66,6 +68,7 @@ export interface IMediaUpload extends Document {
   size: number;
   path: string;
   uploadedAt: Date;
+  brandId?: string;
   metadata?: {
     description?: string;
     tags?: string[];
@@ -79,6 +82,7 @@ const MediaUploadSchema = new Schema<IMediaUpload>({
   size: { type: Number, required: true },
   path: { type: String, required: true },
   uploadedAt: { type: Date, default: Date.now },
+  brandId: { type: String }, // Optional linkage to a brand
   metadata: {
     description: String,
     tags: [String],

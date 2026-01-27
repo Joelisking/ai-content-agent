@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { IBrandConfig, Platform } from '../models';
+import { IBrandConfig, IMediaUpload, Platform } from '../models';
 import { imageGenerationService } from './imageGeneration.service';
 
 interface ContentGenerationRequest {
@@ -9,6 +9,7 @@ interface ContentGenerationRequest {
   userPrompt?: string;
   previousContent?: string[];
   generateImage?: boolean;
+  availableMedia?: IMediaUpload[];
 }
 
 interface GeneratedContent {
@@ -24,6 +25,7 @@ interface GeneratedContent {
     promptTokens: number;
     completionTokens: number;
   };
+  selectedMediaId?: string;
 }
 
 export class AIAgentService {
@@ -110,8 +112,28 @@ Provide a detailed brand voice analysis that will guide content creation. Includ
     mediaContext?: string,
     userPrompt?: string,
     previousContent?: string[],
-  ): Promise<{ content: string; reasoning: string }> {
+    availableMedia?: IMediaUpload[],
+  ): Promise<{
+    content: string;
+    reasoning: string;
+    selectedMediaId?: string;
+  }> {
     const platformGuidelines = this.getPlatformGuidelines(platform);
+
+    // Format available media for the prompt
+    let mediaList = '';
+    if (availableMedia && availableMedia.length > 0) {
+      mediaList = availableMedia
+        .map(
+          (m) =>
+            `- ID: ${m._id}
+  Type: ${m.mimetype}
+  Name: ${m.originalName}
+  Description: ${m.metadata?.description || 'No description'}
+  Tags: ${m.metadata?.tags?.join(', ') || 'None'}`,
+        )
+        .join('\n\n');
+    }
 
     const prompt = `You are a social media content creator. Generate engaging content for ${platform}.
 
@@ -123,6 +145,15 @@ ${platformGuidelines}
 
 ${mediaContext ? `MEDIA CONTEXT:\n${mediaContext}\n` : ''}
 ${userPrompt ? `SPECIFIC REQUEST:\n${userPrompt}\n` : ''}
+${
+  availableMedia && availableMedia.length > 0
+    ? `AVAILABLE MEDIA ASSETS:
+The client has uploaded the following media assets. If one of these is HIGHLY RELEVANT to the content being generated, you may select it.
+${mediaList}
+
+INSTRUCTION: If you select a media asset, include "MEDIA_SELECTED: <ID>" in your response. Only select an asset if it fits well. If you select an existing asset, valid text content is still required, but do NOT suggest generating a new image.`
+    : ''
+}
 ${
   previousContent && previousContent.length > 0
     ? `CRITICAL INSTRUCTION: You must avoid the themes, specific phrases, and starting hooks used in these recent posts:
@@ -146,7 +177,8 @@ CONTENT:
 [The actual post text here]
 
 REASONING:
-[Brief explanation of your creative choices]`;
+[Brief explanation of your creative choices]
+${availableMedia && availableMedia.length > 0 ? '\nMEDIA_SELECTED: [Optional ID of selected media]' : ''}`;
 
     const response = await this.getClient().messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -165,15 +197,21 @@ REASONING:
 
     // Parse content and reasoning
     const contentMatch = fullText.match(
-      /CONTENT:\s*([\s\S]*?)(?=REASONING:|$)/,
+      /CONTENT:\s*([\s\S]*?)(?=REASONING:|MEDIA_SELECTED:|$)/,
     );
-    const reasoningMatch = fullText.match(/REASONING:\s*([\s\S]*?)$/);
+    const reasoningMatch = fullText.match(
+      /REASONING:\s*([\s\S]*?)(?=MEDIA_SELECTED:|$)/,
+    );
+    const mediaMatch = fullText.match(
+      /MEDIA_SELECTED:\s*([a-f0-9]+)/i,
+    );
 
     return {
       content: contentMatch ? contentMatch[1].trim() : fullText,
       reasoning: reasoningMatch
         ? reasoningMatch[1].trim()
         : 'No reasoning provided',
+      selectedMediaId: mediaMatch ? mediaMatch[1].trim() : undefined,
     };
   }
 
@@ -228,19 +266,23 @@ Return ONLY the hashtags, one per line, with the # symbol.`;
 
       // Step 2: Generate content
       this.log('Step 2: Generating platform content...');
-      const { content, reasoning } =
-        await this.generatePlatformContent(
-          brandVoiceAnalysis,
-          request.platform,
-          request.mediaContext,
-          request.userPrompt,
-          request.previousContent,
-        );
+      const {
+        content: generatedText,
+        reasoning,
+        selectedMediaId,
+      } = await this.generatePlatformContent(
+        brandVoiceAnalysis,
+        request.platform,
+        request.mediaContext,
+        request.userPrompt,
+        request.previousContent,
+        request.availableMedia,
+      );
 
       // Step 3: Extract hashtags
       this.log('Step 3: Optimizing hashtags...');
       const hashtags = await this.extractHashtags(
-        content,
+        generatedText,
         request.platform,
       );
 
@@ -248,13 +290,14 @@ Return ONLY the hashtags, one per line, with the # symbol.`;
       let imageUrl: string | undefined;
       let imagePrompt: string | undefined;
       let imageError: string | undefined;
-      if (request.generateImage) {
+      // Only generate an image if requested AND the agent didn't select an existing asset
+      if (request.generateImage && !selectedMediaId) {
         this.log('Step 4: Generating AI image...');
         try {
           // Generate image prompt based on content
           imagePrompt =
             await imageGenerationService.generateImagePrompt(
-              content,
+              generatedText,
               request.platform,
               `Brand: ${request.brandConfig.name}, Industry: ${request.brandConfig.industry}`,
             );
@@ -279,7 +322,7 @@ Return ONLY the hashtags, one per line, with the # symbol.`;
       }
 
       return {
-        text: content,
+        text: generatedText, // content was renamed to generatedText
         hashtags,
         reasoning,
         imageUrl,
@@ -291,6 +334,7 @@ Return ONLY the hashtags, one per line, with the # symbol.`;
           promptTokens: 0, // Would need to calculate from actual usage
           completionTokens: 0,
         },
+        selectedMediaId, // Pass back selected media ID
       };
     } catch (error) {
       console.error('❌ AI Agent Error:', error);
@@ -410,6 +454,101 @@ REASONING:
     };
 
     return guidelines[platform];
+  }
+  /**
+   * Analyze an image to generate description and tags
+   */
+  async analyzeImage(
+    imageUrl: string,
+  ): Promise<{ description: string; tags: string[] }> {
+    try {
+      this.log('Analyzing image...');
+
+      const prompt = `Analyze this image and provide a concise description and relevant tags.
+      
+      Format your response exactly like this:
+      DESCRIPTION: [A clear, detailed description of the image content, style, and mood]
+      TAGS: [tag1, tag2, tag3, tag4, tag5]
+      
+      Provide 5-10 relevant tags.`;
+
+      // Fetch the image to convert to base64 (Claude API requires base64 for images)
+      const imageResponse = await fetch(imageUrl);
+      const arrayBuffer = await imageResponse.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const base64Image = buffer.toString('base64');
+      const mediaType = imageUrl.endsWith('.png')
+        ? 'image/png'
+        : 'image/jpeg';
+
+      const response = await this.getClient().messages.create({
+        model: 'claude-3-haiku-20240307', // Fallback to Haiku for vision
+        max_tokens: 300,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: mediaType as
+                    | 'image/jpeg'
+                    | 'image/png'
+                    | 'image/gif'
+                    | 'image/webp',
+                  data: base64Image,
+                },
+              },
+              {
+                type: 'text',
+                text: prompt,
+              },
+            ],
+          },
+        ],
+      });
+
+      const textContent = response.content.find(
+        (block) => block.type === 'text',
+      );
+      const fullText =
+        textContent && textContent.type === 'text'
+          ? textContent.text
+          : '';
+
+      const descriptionMatch = fullText.match(
+        /DESCRIPTION:\s*([\s\S]*?)(?=TAGS:|$)/,
+      );
+      const tagsMatch = fullText.match(/TAGS:\s*\[?([\s\S]*?)\]?$/);
+
+      const description = descriptionMatch
+        ? descriptionMatch[1].trim()
+        : 'No description available';
+      const tagsString = tagsMatch ? tagsMatch[1].trim() : '';
+      const tags = tagsString
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0);
+
+      this.log('Image analysis complete', {
+        description: description.substring(0, 50) + '...',
+        tags,
+      });
+
+      return { description, tags };
+    } catch (error) {
+      console.error(
+        '❌ Image analysis failed:',
+        JSON.stringify(error, null, 2),
+      );
+      return {
+        description:
+          'Image analysis failed: ' +
+          (error instanceof Error ? error.message : String(error)),
+        tags: [],
+      };
+    }
   }
 }
 
