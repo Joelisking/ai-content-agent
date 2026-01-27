@@ -95,14 +95,17 @@ export const ApprovalQueue: React.FC = () => {
       // Let's stick to ISO for now.
     }
 
+    setLoading(true);
     try {
       await apiClient.approveContent(selectedApproveId, 'admin', scheduledFor);
-      toast.success(scheduledFor ? 'Content scheduled!' : 'Content approved!');
+      toast.success(scheduledFor ? 'Content scheduled!' : 'Content approved and posted!');
       setApproveModalOpen(false);
       await fetchContent();
     } catch (error) {
       console.error('Error approving content:', error);
       toast.error('Failed to approve content');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -528,9 +531,15 @@ export const ApprovalQueue: React.FC = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setApproveModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleApproveSubmit} className="bg-green-600 hover:bg-green-700">
-              <FaCheck className="mr-2 h-4 w-4" />
-              {scheduleDate ? 'Schedule' : 'Approve Now'}
+            <Button onClick={handleApproveSubmit} className="bg-green-600 hover:bg-green-700" disabled={loading}>
+              {loading ? (
+                <FaSync className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FaCheck className="mr-2 h-4 w-4" />
+              )}
+              {scheduleDate
+                ? (loading ? 'Scheduling...' : 'Schedule')
+                : (loading ? 'Posting...' : 'Approve Now')}
             </Button>
           </DialogFooter>
         </DialogContent>
