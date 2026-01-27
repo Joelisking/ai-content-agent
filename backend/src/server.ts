@@ -6,8 +6,10 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import fs from 'fs';
 import routes, { postingService, contentScheduler } from './routes';
+import linkedinRoutes from './routes/linkedin';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -16,6 +18,7 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // Create uploads directory if it doesn't exist
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
@@ -28,6 +31,7 @@ app.use('/uploads', express.static(uploadDir));
 
 // API routes
 app.use('/api', routes);
+app.use('/api/linkedin', linkedinRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -82,7 +86,9 @@ const startServer = async () => {
 
     server.on('error', (e: any) => {
       if (e.code === 'EADDRINUSE') {
-        console.error(`❌ Port ${PORT} is already in use. Please stop the other process or use a different port.`);
+        console.error(
+          `❌ Port ${PORT} is already in use. Please stop the other process or use a different port.`,
+        );
         process.exit(1);
       }
     });

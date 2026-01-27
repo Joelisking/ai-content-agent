@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import {
     FaHome,
     FaMagic,
@@ -10,6 +11,7 @@ import {
     FaImage,
     FaCog,
     FaBuilding,
+    FaUsers,
 } from 'react-icons/fa';
 import { Button } from '@/components/ui/button';
 // import { ScrollArea } from '@/components/ui/scroll-area';
@@ -28,10 +30,12 @@ const navigation: NavigationItem[] = [
     { href: '/media', name: 'Media Upload', icon: FaImage },
     { href: '/brand', name: 'Brand Settings', icon: FaBuilding },
     { href: '/control', name: 'System Control', icon: FaCog },
+    { href: '/admin/users', name: 'Team', icon: FaUsers },
 ];
 
 export function Sidebar() {
     const pathname = usePathname();
+    const { logout } = useAuth();
 
     return (
         <div className="flex flex-col h-full bg-sidebar border-r border-sidebar-border">
@@ -70,7 +74,15 @@ export function Sidebar() {
                 </nav>
             </div>
 
-            <div className="p-4 border-t border-sidebar-border mt-auto">
+            <div className="p-4 border-t border-sidebar-border mt-auto space-y-4">
+                <Button
+                    variant="outline"
+                    className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-50"
+                    onClick={() => logout()}
+                >
+                    Log Out
+                </Button>
+
                 <div className="text-xs text-muted-foreground">
                     <p className="font-semibold mb-1 text-sidebar-foreground">System Info</p>
                     <p>Version 1.0.0</p>

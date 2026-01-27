@@ -280,3 +280,6 @@ export const AuditLog = mongoose.model<IAuditLog>(
   'AuditLog',
   AuditLogSchema,
 );
+
+// User Model
+export { User, IUser } from './user.model';

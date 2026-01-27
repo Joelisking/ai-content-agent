@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { FaPause, FaPlay, FaExclamationTriangle, FaHandPaper, FaCheckCircle, FaCog } from 'react-icons/fa';
+import { useAuth } from '@/context/AuthContext';
+import { FaPause, FaPlay, FaExclamationTriangle, FaHandPaper, FaCheckCircle, FaCog, FaLinkedin, FaUnlink } from 'react-icons/fa';
 import { apiClient, SystemControl as SystemControlType } from '../lib/api/client';
 // import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,6 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 
 export const SystemControl: React.FC = () => {
+  const { user, login } = useAuth(); // We might need to refresh user, usually getMe or just refresh page.
   const [control, setControl] = useState<SystemControlType | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -155,6 +157,68 @@ export const SystemControl: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Social Connections */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FaLinkedin className="text-blue-700" /> Social Connections
+          </CardTitle>
+          <CardDescription>Manage authorized social media accounts</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/50">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-white rounded-full border shadow-sm">
+                <FaLinkedin className="text-2xl text-[#0077b5]" />
+              </div>
+              <div>
+                <h4 className="font-semibold">LinkedIn</h4>
+                {user?.linkedinName ? (
+                  <p className="text-sm text-green-600 flex items-center gap-1">
+                    <FaCheckCircle className="w-3 h-3" /> Connected as {user.linkedinName}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not connected</p>
+                )}
+              </div>
+            </div>
+            <div>
+              {user?.linkedinName ? (
+                <button
+                  className="px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-md hover:bg-red-50 transition-colors flex items-center gap-2"
+                  onClick={async () => {
+                    if (confirm('Are you sure you want to disconnect LinkedIn?')) {
+                      try {
+                        await apiClient.disconnectLinkedIn();
+                        window.location.reload(); // Simple reload to refresh auth context state from server
+                      } catch (e) {
+                        toast.error('Failed to disconnect');
+                      }
+                    }
+                  }}
+                >
+                  <FaUnlink /> Disconnect
+                </button>
+              ) : (
+                <button
+                  className="px-4 py-2 text-sm font-medium text-white bg-[#0077b5] rounded-md hover:bg-[#006097] transition-colors shadow-sm"
+                  onClick={async () => {
+                    try {
+                      const { data } = await apiClient.getLinkedInAuthUrl();
+                      window.location.href = data.url;
+                    } catch (e) {
+                      toast.error('Failed to start connection flow');
+                    }
+                  }}
+                >
+                  Connect LinkedIn
+                </button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* System Settings */}
       <Card>
