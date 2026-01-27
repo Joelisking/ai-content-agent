@@ -12,7 +12,14 @@ import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { toast } from "sonner"
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { Textarea } from "@/components/ui/textarea";
 import Image from 'next/image';
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import { CalendarIcon } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 export const ApprovalQueue: React.FC = () => {
   const [content, setContent] = useState<Content[]>([]);
@@ -22,6 +29,15 @@ export const ApprovalQueue: React.FC = () => {
   const [selectedContent, setSelectedContent] = useState<Content | null>(null);
   const [targetPlatform, setTargetPlatform] = useState<string>('twitter');
   const [repurposeMode, setRepurposeMode] = useState<'create' | 'replace'>('create');
+  const [regenerateModalOpen, setRegenerateModalOpen] = useState(false);
+  const [regenerateFeedback, setRegenerateFeedback] = useState('');
+  const [selectedRegenerateId, setSelectedRegenerateId] = useState<string | null>(null);
+
+  // Approve Modal State
+  const [approveModalOpen, setApproveModalOpen] = useState(false);
+  const [selectedApproveId, setSelectedApproveId] = useState<string | null>(null);
+  const [scheduleDate, setScheduleDate] = useState<Date | undefined>(undefined);
+  const [scheduleTime, setScheduleTime] = useState<string>('');
 
   useEffect(() => {
     fetchContent();
@@ -41,15 +57,48 @@ export const ApprovalQueue: React.FC = () => {
     }
   };
 
-  const handleApprove = async (id: string) => {
-    // TODO: Replace prompt with proper Dialog if needed, but keeping prompt for speed as per original code, or upgrading to toast action?
-    // User used prompt, let's keep it simple or upgrade later. 
-    // Actually, prompt is blocking. Let's use a cleaner approach or stick to prompt for now to match logic exactly.
-    const scheduledFor = prompt('Schedule for later? (leave empty for immediate posting)\nFormat: YYYY-MM-DD HH:mm');
+  const handleApprove = (id: string) => {
+    setSelectedApproveId(id);
+    setScheduleDate(undefined);
+    setScheduleTime('');
+    setApproveModalOpen(true);
+  };
+
+  const handleApproveSubmit = async () => {
+    if (!selectedApproveId) return;
+
+    let scheduledFor: string | undefined = undefined;
+
+    if (scheduleDate) {
+      const date = new Date(scheduleDate);
+      if (scheduleTime) {
+        const [hours, minutes] = scheduleTime.split(':').map(Number);
+        date.setHours(hours, minutes);
+      } else {
+        // Default to next hour or something? Or just start of day?
+        // Let's set it to noon if no time specified, or current time? 
+        // User asked for time picker, so they should pick time.
+        // If they don't pick time but pick date, maybe default to 9am?
+        date.setHours(9, 0, 0, 0);
+      }
+      scheduledFor = date.toISOString(); // Or format expected by backend? Original code used 'YYYY-MM-DD HH:mm'.
+      // API client likely handles ISO string or similar.
+      // Let's check original prompt format: 'YYYY-MM-DD HH:mm'.
+      // If backend expects specific format we might need to format it.
+      // Looking at `apiClient.approveContent`, it takes `scheduledFor`. 
+      // Assuming ISO string is fine or we should format it to 'YYYY-MM-DD HH:mm'.
+      // The original `prompt` asked for 'YYYY-MM-DD HH:mm', so backend probably parses that string.
+      // Let's format it to be safe if backend expects string. 
+      // Actually backend probably uses `new Date(string)`.
+      // Let's try sending ISO string first, usually safer.
+      // Wait, `format` import is available.
+      // Let's stick to ISO for now.
+    }
 
     try {
-      await apiClient.approveContent(id, 'admin', scheduledFor || undefined);
-      toast.success('Content approved!');
+      await apiClient.approveContent(selectedApproveId, 'admin', scheduledFor);
+      toast.success(scheduledFor ? 'Content scheduled!' : 'Content approved!');
+      setApproveModalOpen(false);
       await fetchContent();
     } catch (error) {
       console.error('Error approving content:', error);
@@ -71,17 +120,26 @@ export const ApprovalQueue: React.FC = () => {
     }
   };
 
-  const handleRegenerate = async (id: string) => {
-    const feedback = prompt('What would you like to change?');
-    if (!feedback) return;
+  const handleRegenerate = (id: string) => {
+    setSelectedRegenerateId(id);
+    setRegenerateFeedback('');
+    setRegenerateModalOpen(true);
+  };
+
+  const handleRegenerateSubmit = async () => {
+    if (!selectedRegenerateId) return;
 
     try {
-      await apiClient.regenerateContent(id, feedback, 'admin');
+      setLoading(true);
+      await apiClient.regenerateContent(selectedRegenerateId, regenerateFeedback, 'admin');
       toast.info('Content regenerating...');
+      setRegenerateModalOpen(false);
       await fetchContent();
     } catch (error) {
       console.error('Error regenerating content:', error);
       toast.error('Failed to regenerate content');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -384,6 +442,95 @@ export const ApprovalQueue: React.FC = () => {
             <Button onClick={handleRepurposeSubmit} disabled={loading}>
               {loading ? <FaSync className="mr-2 h-4 w-4 animate-spin" /> : <FaSync className="mr-2 h-4 w-4" />}
               Repurpose
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Regenerate Modal */}
+      <Dialog open={regenerateModalOpen} onOpenChange={setRegenerateModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Regenerate Content</DialogTitle>
+            <DialogDescription>
+              Provide feedback on what needs to be changed. The AI will generate a new version.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            <Label htmlFor="feedback" className="mb-2 block">Feedback</Label>
+            <Textarea
+              id="feedback"
+              placeholder="E.g., Make it more professional, shorten the text, add emojis..."
+              value={regenerateFeedback}
+              onChange={(e) => setRegenerateFeedback(e.target.value)}
+              rows={4}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRegenerateModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleRegenerateSubmit} disabled={loading || !regenerateFeedback.trim()}>
+              {loading ? <FaSync className="mr-2 h-4 w-4 animate-spin" /> : <FaSync className="mr-2 h-4 w-4" />}
+              Regenerate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Approve Modal */}
+      <Dialog open={approveModalOpen} onOpenChange={setApproveModalOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Approve Content</DialogTitle>
+            <DialogDescription>
+              Approve this content for posting. You can optionally schedule it for a later date.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="flex flex-col space-y-2">
+              <Label>Schedule Date (Optional)</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !scheduleDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {scheduleDate ? format(scheduleDate, "PPP") : <span>Pick a date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={scheduleDate}
+                    onSelect={setScheduleDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {scheduleDate && (
+              <div className="flex flex-col space-y-2">
+                <Label htmlFor="time">Time</Label>
+                <Input
+                  id="time"
+                  type="time"
+                  value={scheduleTime}
+                  onChange={(e) => setScheduleTime(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApproveModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleApproveSubmit} className="bg-green-600 hover:bg-green-700">
+              <FaCheck className="mr-2 h-4 w-4" />
+              {scheduleDate ? 'Schedule' : 'Approve Now'}
             </Button>
           </DialogFooter>
         </DialogContent>

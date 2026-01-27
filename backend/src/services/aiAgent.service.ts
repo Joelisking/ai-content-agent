@@ -34,6 +34,25 @@ export class AIAgentService {
     this.apiKey = apiKey;
   }
 
+  private log(message: string, data?: any) {
+    if (data) {
+      console.log(`[AI-AGENT] ${message}`, data);
+    } else {
+      console.log(`[AI-AGENT] ${message}`);
+    }
+  }
+
+  public validateConfig(): boolean {
+    const key = this.apiKey || process.env.ANTHROPIC_API_KEY;
+    if (!key) {
+      console.error(
+        '[AI-AGENT] ❌ Missing ANTHROPIC_API_KEY environment variable',
+      );
+      return false;
+    }
+    return true;
+  }
+
   private getClient(): Anthropic {
     if (!this.client) {
       const key = this.apiKey || process.env.ANTHROPIC_API_KEY;
@@ -202,13 +221,13 @@ Return ONLY the hashtags, one per line, with the # symbol.`;
   ): Promise<GeneratedContent> {
     try {
       // Step 1: Analyze brand
-      console.log('🤖 Step 1: Analyzing brand voice...');
+      this.log('Step 1: Analyzing brand voice...');
       const brandVoiceAnalysis = await this.analyzeBrandContext(
         request.brandConfig,
       );
 
       // Step 2: Generate content
-      console.log('🤖 Step 2: Generating platform content...');
+      this.log('Step 2: Generating platform content...');
       const { content, reasoning } =
         await this.generatePlatformContent(
           brandVoiceAnalysis,
@@ -219,7 +238,7 @@ Return ONLY the hashtags, one per line, with the # symbol.`;
         );
 
       // Step 3: Extract hashtags
-      console.log('🤖 Step 3: Optimizing hashtags...');
+      this.log('Step 3: Optimizing hashtags...');
       const hashtags = await this.extractHashtags(
         content,
         request.platform,
@@ -230,24 +249,30 @@ Return ONLY the hashtags, one per line, with the # symbol.`;
       let imagePrompt: string | undefined;
       let imageError: string | undefined;
       if (request.generateImage) {
-        console.log('🤖 Step 4: Generating AI image...');
+        this.log('Step 4: Generating AI image...');
         try {
           // Generate image prompt based on content
-          imagePrompt = await imageGenerationService.generateImagePrompt(
-            content,
-            request.platform,
-            `Brand: ${request.brandConfig.name}, Industry: ${request.brandConfig.industry}`,
-          );
+          imagePrompt =
+            await imageGenerationService.generateImagePrompt(
+              content,
+              request.platform,
+              `Brand: ${request.brandConfig.name}, Industry: ${request.brandConfig.industry}`,
+            );
 
           // Generate image using DALL-E 3
-          const imageResult = await imageGenerationService.generateImage(
-            imagePrompt,
-            request.platform,
-          );
+          const imageResult =
+            await imageGenerationService.generateImage(
+              imagePrompt,
+              request.platform,
+            );
           imageUrl = imageResult.cloudinaryUrl;
         } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-          console.error('⚠️ Image generation failed (continuing without image):', errorMsg);
+          const errorMsg =
+            err instanceof Error ? err.message : 'Unknown error';
+          console.error(
+            '⚠️ Image generation failed (continuing without image):',
+            errorMsg,
+          );
           imageError = errorMsg;
           // Don't fail the entire generation if image fails
         }
@@ -387,3 +412,5 @@ REASONING:
     return guidelines[platform];
   }
 }
+
+export const aiAgent = new AIAgentService();

@@ -4,6 +4,7 @@ import {
   ContentQueue,
   SystemControl,
   AuditLog,
+  MediaUpload,
   IBrandConfig,
   Platform,
 } from '../models';
@@ -41,7 +42,9 @@ export class ContentSchedulerService {
    */
   private isTimeMatch(scheduledTime: string): boolean {
     const now = new Date();
-    const [scheduledHour, scheduledMinute] = scheduledTime.split(':').map(Number);
+    const [scheduledHour, scheduledMinute] = scheduledTime
+      .split(':')
+      .map(Number);
 
     return (
       now.getHours() === scheduledHour &&
@@ -52,7 +55,10 @@ export class ContentSchedulerService {
   /**
    * Check if current day matches scheduled days
    */
-  private isDayMatch(daysOfWeek: number[], frequency: string): boolean {
+  private isDayMatch(
+    daysOfWeek: number[],
+    frequency: string,
+  ): boolean {
     const today = new Date().getDay(); // 0 = Sunday, 6 = Saturday
 
     if (frequency === 'daily') {
@@ -98,7 +104,10 @@ export class ContentSchedulerService {
       });
 
       // Don't generate content if system is paused or in crisis mode
-      if (systemControl?.mode === 'crisis' || systemControl?.mode === 'paused') {
+      if (
+        systemControl?.mode === 'crisis' ||
+        systemControl?.mode === 'paused'
+      ) {
         console.log(
           `⏸️  Content generation paused - system in ${systemControl?.mode} mode`,
         );
@@ -121,7 +130,12 @@ export class ContentSchedulerService {
         if (!schedule?.enabled) continue;
 
         // Check if today is a scheduled day
-        if (!this.isDayMatch(schedule.daysOfWeek || [], schedule.frequency)) {
+        if (
+          !this.isDayMatch(
+            schedule.daysOfWeek || [],
+            schedule.frequency,
+          )
+        ) {
           continue;
         }
 
@@ -151,7 +165,10 @@ export class ContentSchedulerService {
         }
       }
     } catch (error) {
-      console.error('❌ Error processing scheduled generations:', error);
+      console.error(
+        '❌ Error processing scheduled generations:',
+        error,
+      );
     }
   }
 
@@ -159,10 +176,19 @@ export class ContentSchedulerService {
    * Generate content for a scheduled task
    */
   private async generateScheduledContent(task: ScheduledGeneration) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let contentId: any = null;
     try {
       console.log(
-        `🤖 Auto-generating ${task.platform} content for ${task.brandName}...`,
+        `[SCHEDULER] 🤖 Auto-generating ${task.platform} content for ${task.brandName}...`,
       );
+
+      // Pre-flight check: Ensure AI Service is configured
+      if (!aiAgent.validateConfig()) {
+        throw new Error(
+          'AI Service Configuration Error: Missing API Key',
+        );
+      }
 
       const brand = await BrandConfig.findById(task.brandId);
       if (!brand) {
@@ -194,11 +220,14 @@ export class ContentSchedulerService {
       });
 
       await content.save();
+      contentId = content._id;
 
       // Fetch recent content to avoid duplicates
       const recentContent = await ContentQueue.find({
         brandConfigId: task.brandId,
-        status: { $in: ['pending', 'posted', 'scheduled', 'approved'] },
+        status: {
+          $in: ['pending', 'posted', 'scheduled', 'approved'],
+        },
         _id: { $ne: content._id },
       })
         .sort({ createdAt: -1 })
@@ -219,13 +248,53 @@ export class ContentSchedulerService {
       });
 
       // Update content with generated text
-      await ContentQueue.findByIdAndUpdate(content._id, {
+      // Handle generated image
+      let generatedMediaId: string | undefined;
+      let generatedImageUrl: string | undefined;
+      let imagePrompt: string | undefined;
+
+      if (generated.imageUrl) {
+        console.log(
+          `[SCHEDULER] 💾 Saving generated image for ${task.brandName}...`,
+        );
+        const generatedMedia = new MediaUpload({
+          filename: `ai-generated-${Date.now()}`,
+          originalName: 'AI Generated Image',
+          mimetype: 'image/png',
+          size: 0,
+          path: generated.imageUrl,
+          metadata: {
+            aiGenerated: true,
+            imagePrompt: generated.imagePrompt,
+          },
+        });
+        await generatedMedia.save();
+        generatedMediaId = generatedMedia._id.toString();
+        generatedImageUrl = generated.imageUrl;
+        imagePrompt = generated.imagePrompt;
+      }
+
+      // Update content with generated text and image
+      const updateData: any = {
         'content.text': generated.text,
         'content.hashtags': generated.hashtags,
         generationStatus: 'completed',
         'metadata.aiMetadata': generated.metadata,
         'metadata.reasoning': generated.reasoning,
-      });
+      };
+
+      if (generatedMediaId) {
+        updateData['metadata.generatedImageId'] = generatedMediaId;
+        updateData['metadata.generatedImageUrl'] = generatedImageUrl;
+        updateData['metadata.imagePrompt'] = imagePrompt;
+        updateData['content.mediaIds'] = [generatedMediaId];
+      }
+
+      if (generated.imageError) {
+        updateData['metadata.imageError'] = generated.imageError;
+      }
+
+      await ContentQueue.findByIdAndUpdate(content._id, updateData);
 
       // Log the action
       await AuditLog.create({
@@ -251,6 +320,27 @@ export class ContentSchedulerService {
         error,
       );
 
+      if (contentId) {
+        try {
+          await ContentQueue.findByIdAndUpdate(contentId, {
+            generationStatus: 'failed',
+            generationError:
+              error instanceof Error
+                ? error.message
+                : 'Unknown error',
+            status: 'rejected',
+            rejectionReason: `Automated generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            'content.text':
+              'Content generation failed. Please regenerate.',
+          });
+        } catch (updateError) {
+          console.error(
+            'Failed to update failed content status:',
+            updateError,
+          );
+        }
+      }
+
       // Log failure
       await AuditLog.create({
         action: 'scheduled_content_generation_failed',
@@ -261,7 +351,8 @@ export class ContentSchedulerService {
           brandName: task.brandName,
           platform: task.platform,
           scheduledTime: task.time,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error:
+            error instanceof Error ? error.message : 'Unknown error',
         },
       });
     }
@@ -287,7 +378,11 @@ export class ContentSchedulerService {
         const [hour, minute] = time.split(':').map(Number);
 
         // Check next N days
-        for (let dayOffset = 0; dayOffset < Math.ceil(hours / 24); dayOffset++) {
+        for (
+          let dayOffset = 0;
+          dayOffset < Math.ceil(hours / 24);
+          dayOffset++
+        ) {
           const checkDate = new Date(now);
           checkDate.setDate(checkDate.getDate() + dayOffset);
           checkDate.setHours(hour, minute, 0, 0);

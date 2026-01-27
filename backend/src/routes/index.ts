@@ -342,8 +342,14 @@ async function processGenerationAsync(contentId: string) {
     const previousContent = recentContent.map((c) => c.content.text);
 
     // Generate content using AI agent
-    const generateImageFlag = (content.metadata as any)?.generateImage || false;
-    console.log('🎨 generateImage flag from metadata:', generateImageFlag, '| Raw metadata:', JSON.stringify(content.metadata));
+    const generateImageFlag =
+      (content.metadata as any)?.generateImage || false;
+    console.log(
+      '🎨 generateImage flag from metadata:',
+      generateImageFlag,
+      '| Raw metadata:',
+      JSON.stringify(content.metadata),
+    );
 
     const generated = await aiAgent.generateContent({
       brandConfig,
@@ -377,7 +383,10 @@ async function processGenerationAsync(contentId: string) {
       });
       await generatedMedia.save();
       generatedMediaId = generatedMedia._id.toString();
-      console.log('✅ Generated image saved with ID:', generatedMediaId);
+      console.log(
+        '✅ Generated image saved with ID:',
+        generatedMediaId,
+      );
     }
 
     // Update content with generated results
@@ -395,7 +404,10 @@ async function processGenerationAsync(contentId: string) {
       updateData['metadata.generatedImageUrl'] = generated.imageUrl;
       updateData['metadata.imagePrompt'] = generated.imagePrompt;
       // Add to mediaIds if no media was already attached
-      if (!content.content.mediaIds || content.content.mediaIds.length === 0) {
+      if (
+        !content.content.mediaIds ||
+        content.content.mediaIds.length === 0
+      ) {
         updateData['content.mediaIds'] = [generatedMediaId];
         console.log('✅ Image attached to content.mediaIds');
       }
@@ -436,7 +448,10 @@ async function processGenerationAsync(contentId: string) {
 
     console.log(`Content generation completed for ${contentId}`);
   } catch (error) {
-    console.error(`Content generation failed for ${contentId}:`, error);
+    console.error(
+      `Content generation failed for ${contentId}:`,
+      error,
+    );
     await ContentQueue.findByIdAndUpdate(contentId, {
       generationStatus: 'failed',
       generationError:
@@ -447,19 +462,26 @@ async function processGenerationAsync(contentId: string) {
 
 router.post('/content/generate', async (req, res) => {
   try {
-    const { brandConfigId, platform, mediaIds, userPrompt, generateImage } =
-      req.body;
+    const {
+      brandConfigId,
+      platform,
+      mediaIds,
+      userPrompt,
+      generateImage,
+    } = req.body;
 
     // Check system mode before generation
-    const systemControl = await SystemControl.findOne().sort({ lastChangedAt: -1 });
+    const systemControl = await SystemControl.findOne().sort({
+      lastChangedAt: -1,
+    });
     if (systemControl?.mode === 'crisis') {
       return res.status(503).json({
-        error: 'System in crisis mode - all operations blocked'
+        error: 'System in crisis mode - all operations blocked',
       });
     }
     if (systemControl?.mode === 'paused') {
       return res.status(503).json({
-        error: 'System paused - content generation disabled'
+        error: 'System paused - content generation disabled',
       });
     }
 
@@ -471,17 +493,27 @@ router.post('/content/generate', async (req, res) => {
     }
 
     // Instagram requires media (unless AI image generation is enabled)
-    if (platform === 'instagram' && (!mediaIds || mediaIds.length === 0) && !generateImage) {
+    if (
+      platform === 'instagram' &&
+      (!mediaIds || mediaIds.length === 0) &&
+      !generateImage
+    ) {
       return res
         .status(400)
-        .json({ error: 'Instagram posts require at least one media item (or enable AI image generation)' });
+        .json({
+          error:
+            'Instagram posts require at least one media item (or enable AI image generation)',
+        });
     }
 
     // Validate OpenAI API key if image generation is requested
     if (generateImage && !process.env.OPENAI_API_KEY) {
       return res
         .status(400)
-        .json({ error: 'AI image generation requires OPENAI_API_KEY to be configured' });
+        .json({
+          error:
+            'AI image generation requires OPENAI_API_KEY to be configured',
+        });
     }
 
     // Platform-specific media limits
@@ -526,7 +558,10 @@ router.post('/content/generate', async (req, res) => {
     });
 
     await content.save();
-    console.log('📝 Content created with generateImage:', (content.metadata as any)?.generateImage);
+    console.log(
+      '📝 Content created with generateImage:',
+      (content.metadata as any)?.generateImage,
+    );
 
     // Fire-and-forget: start AI generation in background
     processGenerationAsync(content._id.toString()).catch((err) =>
@@ -749,7 +784,39 @@ router.post('/content/:id/approve', async (req, res) => {
       },
     });
 
-    res.json(content);
+    // Auto-post if not scheduled and system is not paused
+    let autoPosted = false;
+    if (!scheduledFor) {
+      const systemControl = await SystemControl.findOne().sort({
+        lastChangedAt: -1,
+      });
+      if (
+        systemControl?.mode !== 'paused' &&
+        systemControl?.mode !== 'crisis'
+      ) {
+        // Post immediately
+        await postingService.postImmediately(
+          content._id.toString(),
+          approvedBy || 'admin',
+        );
+        autoPosted = true;
+        // Refresh content to get updated status
+        const updatedContent = await ContentQueue.findById(
+          req.params.id,
+        );
+        return res.json({
+          ...updatedContent?.toObject(),
+          message: 'Content approved and posted immediately',
+        });
+      }
+    }
+
+    res.json({
+      ...content.toObject(),
+      message: scheduledFor
+        ? 'Content approved and scheduled'
+        : 'Content approved (System paused, not posted)',
+    });
   } catch (error) {
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -968,7 +1035,8 @@ router.get('/dashboard/stats', async (req, res) => {
 router.get('/schedules/upcoming', async (req, res) => {
   try {
     const hours = parseInt(req.query.hours as string) || 24;
-    const upcoming = await contentScheduler.getUpcomingSchedules(hours);
+    const upcoming =
+      await contentScheduler.getUpcomingSchedules(hours);
     res.json(upcoming);
   } catch (error) {
     res.status(500).json({
