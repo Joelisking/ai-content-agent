@@ -7,7 +7,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import fs from 'fs';
-import routes from './routes';
+import routes, { postingService, contentScheduler } from './routes';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -82,11 +82,8 @@ const startServer = async () => {
 
     server.on('error', (e: any) => {
       if (e.code === 'EADDRINUSE') {
-        console.log('Address in use, retrying...');
-        setTimeout(() => {
-          server.close();
-          server.listen(PORT);
-        }, 1000);
+        console.error(`❌ Port ${PORT} is already in use. Please stop the other process or use a different port.`);
+        process.exit(1);
       }
     });
   } catch (error) {
@@ -101,7 +98,18 @@ const gracefulShutdown = async (signal: string) => {
     `\n⚠️  Received ${signal}. Shutting down gracefully...`,
   );
 
+  // Stop schedulers first
+  try {
+    postingService.stopScheduler();
+    contentScheduler.stopScheduler();
+    console.log('✅ Schedulers stopped');
+  } catch (err) {
+    console.error('Error stopping schedulers:', err);
+  }
+
   if (server) {
+    // Force close all connections
+    server.closeAllConnections?.();
     await new Promise<void>((resolve) => {
       server.close(() => {
         console.log('✅ HTTP server closed');

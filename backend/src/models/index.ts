@@ -127,6 +127,12 @@ export interface IContentQueue extends Document {
   metadata: {
     version: number;
     previousVersions?: any[];
+    userPrompt?: string;
+    generateImage?: boolean;
+    generatedImageId?: string;
+    generatedImageUrl?: string;
+    imagePrompt?: string;
+    imageError?: string;
     aiMetadata?: {
       model: string;
       temperature: number;
@@ -184,6 +190,12 @@ const ContentQueueSchema = new Schema<IContentQueue>(
     metadata: {
       version: { type: Number, default: 1 },
       previousVersions: [Schema.Types.Mixed],
+      userPrompt: String,
+      generateImage: Boolean,
+      generatedImageId: String,
+      generatedImageUrl: String,
+      imagePrompt: String,
+      imageError: String,
       aiMetadata: {
         model: String,
         temperature: Number,

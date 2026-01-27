@@ -20,8 +20,9 @@ const router = express.Router();
 // Initialize services
 
 const aiAgent = new AIAgentService();
-const postingService = new PostingService();
-// contentScheduler is auto-initialized on import
+export const postingService = new PostingService();
+// contentScheduler is auto-initialized on import - export for graceful shutdown
+export { contentScheduler } from '../services/contentScheduler.service';
 
 // Configure Cloudinary (lazy initialization)
 let cloudinaryConfigured = false;
@@ -341,18 +342,28 @@ async function processGenerationAsync(contentId: string) {
     const previousContent = recentContent.map((c) => c.content.text);
 
     // Generate content using AI agent
+    const generateImageFlag = (content.metadata as any)?.generateImage || false;
+    console.log('🎨 generateImage flag from metadata:', generateImageFlag, '| Raw metadata:', JSON.stringify(content.metadata));
+
     const generated = await aiAgent.generateContent({
       brandConfig,
       platform: content.platform,
       mediaContext: mediaContext || undefined,
       userPrompt: (content.metadata as any)?.userPrompt || undefined,
       previousContent,
-      generateImage: (content.metadata as any)?.generateImage || false,
+      generateImage: generateImageFlag,
     });
 
     // If image was generated, save it to MediaUpload and attach to content
     let generatedMediaId: string | undefined;
+    console.log('🖼️ Image generation result:', {
+      hasImageUrl: !!generated.imageUrl,
+      imageUrl: generated.imageUrl?.substring(0, 50) + '...',
+      imageError: generated.imageError,
+    });
+
     if (generated.imageUrl) {
+      console.log('💾 Saving generated image to MediaUpload...');
       const generatedMedia = new MediaUpload({
         filename: `ai-generated-${Date.now()}`,
         originalName: 'AI Generated Image',
@@ -366,6 +377,7 @@ async function processGenerationAsync(contentId: string) {
       });
       await generatedMedia.save();
       generatedMediaId = generatedMedia._id.toString();
+      console.log('✅ Generated image saved with ID:', generatedMediaId);
     }
 
     // Update content with generated results
@@ -378,12 +390,14 @@ async function processGenerationAsync(contentId: string) {
 
     // Attach generated image if created
     if (generatedMediaId) {
+      console.log('🔗 Attaching generated image to content...');
       updateData['metadata.generatedImageId'] = generatedMediaId;
       updateData['metadata.generatedImageUrl'] = generated.imageUrl;
       updateData['metadata.imagePrompt'] = generated.imagePrompt;
       // Add to mediaIds if no media was already attached
       if (!content.content.mediaIds || content.content.mediaIds.length === 0) {
         updateData['content.mediaIds'] = [generatedMediaId];
+        console.log('✅ Image attached to content.mediaIds');
       }
     }
 
@@ -456,11 +470,18 @@ router.post('/content/generate', async (req, res) => {
         .json({ error: 'brandConfigId and platform are required' });
     }
 
-    // Instagram requires media
-    if (platform === 'instagram' && (!mediaIds || mediaIds.length === 0)) {
+    // Instagram requires media (unless AI image generation is enabled)
+    if (platform === 'instagram' && (!mediaIds || mediaIds.length === 0) && !generateImage) {
       return res
         .status(400)
-        .json({ error: 'Instagram posts require at least one media item' });
+        .json({ error: 'Instagram posts require at least one media item (or enable AI image generation)' });
+    }
+
+    // Validate OpenAI API key if image generation is requested
+    if (generateImage && !process.env.OPENAI_API_KEY) {
+      return res
+        .status(400)
+        .json({ error: 'AI image generation requires OPENAI_API_KEY to be configured' });
     }
 
     // Platform-specific media limits
@@ -505,6 +526,7 @@ router.post('/content/generate', async (req, res) => {
     });
 
     await content.save();
+    console.log('📝 Content created with generateImage:', (content.metadata as any)?.generateImage);
 
     // Fire-and-forget: start AI generation in background
     processGenerationAsync(content._id.toString()).catch((err) =>
