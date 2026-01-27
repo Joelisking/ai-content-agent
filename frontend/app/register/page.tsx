@@ -164,7 +164,7 @@ export default function RegisterPage() {
                                 )}
                             />
 
-                            <FormField
+                            {/* <FormField
                                 control={form.control}
                                 name="secretKey"
                                 render={({ field }) => (
@@ -176,7 +176,7 @@ export default function RegisterPage() {
                                         <FormMessage />
                                     </FormItem>
                                 )}
-                            />
+                            /> */}
 
                             <Button type="submit" className="w-full" disabled={loading}>
                                 {loading ? 'Creating Account...' : 'Create Account'}

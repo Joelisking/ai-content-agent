@@ -45,6 +45,16 @@ export interface GenerationSchedule {
   promptTemplate?: string;
 }
 
+export interface User {
+  _id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'editor';
+  createdAt: string;
+  linkedinName?: string;
+  linkedinAvatar?: string;
+}
+
 export interface Brand {
   _id: string;
   name: string;
@@ -259,6 +269,19 @@ export const apiClient = {
   logout: () => api.post('/auth/logout'),
 
   getMe: () => api.get('/auth/me'),
+
+  // User Management (Admin)
+  getUsers: () => api.get<User[]>('/auth/users'),
+  createUser: (data: {
+    email: string;
+    password: string;
+    role: 'admin' | 'editor';
+  }) => api.post('/auth/users', data),
+
+  // LinkedIn
+  getLinkedInAuthUrl: () =>
+    api.get<{ url: string }>('/linkedin/auth'),
+  disconnectLinkedIn: () => api.post('/linkedin/disconnect'),
 };
 
 export default api;

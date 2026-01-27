@@ -9,6 +9,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import fs from 'fs';
 import routes, { postingService, contentScheduler } from './routes';
+import linkedinRoutes from './routes/linkedin';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -30,6 +31,7 @@ app.use('/uploads', express.static(uploadDir));
 
 // API routes
 app.use('/api', routes);
+app.use('/api/linkedin', linkedinRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

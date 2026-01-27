@@ -9,6 +9,7 @@ interface User {
     email: string;
     name: string;
     role: 'admin' | 'editor';
+    linkedinName?: string;
 }
 
 interface AuthContextType {

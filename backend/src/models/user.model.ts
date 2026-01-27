@@ -8,6 +8,10 @@ export interface IUser extends Document {
   role: 'admin' | 'editor' | 'viewer';
   createdAt: Date;
   updatedAt: Date;
+  linkedinId?: string;
+  linkedinAccessToken?: string;
+  linkedinName?: string;
+  linkedinAvatar?: string;
   comparePassword(password: string): Promise<boolean>;
 }
 
@@ -27,6 +31,10 @@ const UserSchema = new Schema<IUser>(
       enum: ['admin', 'editor', 'viewer'],
       default: 'editor',
     },
+    linkedinId: { type: String },
+    linkedinAccessToken: { type: String },
+    linkedinName: { type: String },
+    linkedinAvatar: { type: String },
   },
   { timestamps: true },
 );

@@ -2,7 +2,10 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { User } from '../models';
-import { authMiddleware } from '../middleware/auth.middleware';
+import {
+  authMiddleware,
+  adminMiddleware,
+} from '../middleware/auth.middleware';
 
 const router = express.Router();
 const JWT_SECRET =
@@ -69,12 +72,9 @@ router.post('/register', async (req, res) => {
       },
     });
   } catch (error) {
-    res
-      .status(500)
-      .json({
-        error:
-          error instanceof Error ? error.message : 'Unknown error',
-      });
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 });
 
@@ -119,12 +119,9 @@ router.post('/login', async (req, res) => {
       },
     });
   } catch (error) {
-    res
-      .status(500)
-      .json({
-        error:
-          error instanceof Error ? error.message : 'Unknown error',
-      });
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 });
 
@@ -140,5 +137,71 @@ router.get('/me', authMiddleware, (req, res) => {
     user: req.user,
   });
 });
+
+// Get all users (Admin only)
+router.get(
+  '/users',
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const users = await User.find()
+        .select('-passwordHash')
+        .sort({ createdAt: -1 });
+      res.json(users);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch users' });
+    }
+  },
+);
+
+// Create User (Admin only)
+router.post(
+  '/users',
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const { email, password, name, role } = req.body;
+
+      if (!email || !password || !name || !role) {
+        return res
+          .status(400)
+          .json({ error: 'Missing required fields' });
+      }
+
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        return res.status(400).json({ error: 'User already exists' });
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(password, salt);
+
+      const user = new User({
+        email,
+        passwordHash,
+        name,
+        role: role || 'editor',
+      });
+
+      await user.save();
+
+      res.status(201).json({
+        user: {
+          id: user._id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        error:
+          error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  },
+);
 
 export default router;
