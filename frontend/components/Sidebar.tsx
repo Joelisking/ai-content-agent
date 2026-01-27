@@ -41,9 +41,7 @@ export function Sidebar() {
                         AI Content Agent
                     </h1>
                 </Link>
-                <div className="mt-2 text-xs text-muted-foreground">
-                    Powered by Claude AI
-                </div>
+
             </div>
 
             <div className="flex-1 px-4 overflow-y-auto">

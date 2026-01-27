@@ -67,11 +67,7 @@ function App() {
                 AI Content Agent
               </h1>
             </div>
-            <div className="flex items-center space-x-2">
-              <div className="hidden sm:block text-sm text-gray-600">
-                Powered by Claude AI
-              </div>
-            </div>
+
           </div>
         </div>
       </nav>
@@ -97,10 +93,9 @@ function App() {
                   }}
                   className={`
                     w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors
-                    ${
-                      activeTab === item.id
-                        ? 'bg-primary-50 text-primary-700 font-semibold'
-                        : 'text-gray-700 hover:bg-gray-50'
+                    ${activeTab === item.id
+                      ? 'bg-primary-50 text-primary-700 font-semibold'
+                      : 'text-gray-700 hover:bg-gray-50'
                     }
                   `}
                 >

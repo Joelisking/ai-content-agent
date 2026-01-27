@@ -11,6 +11,7 @@ export const ApprovalQueue: React.FC = () => {
   const [selectedContent, setSelectedContent] = useState<Content | null>(null);
   const [targetPlatform, setTargetPlatform] = useState<string>('twitter');
   const [repurposeMode, setRepurposeMode] = useState<'create' | 'replace'>('create');
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchContent();
@@ -33,12 +34,17 @@ export const ApprovalQueue: React.FC = () => {
     const scheduledFor = prompt('Schedule for later? (leave empty for immediate posting)\nFormat: YYYY-MM-DD HH:mm');
 
     try {
+      if (!scheduledFor) {
+        setApprovingId(id);
+      }
       await apiClient.approveContent(id, 'admin', scheduledFor || undefined);
       alert('Content approved!');
       await fetchContent();
     } catch (error) {
       console.error('Error approving content:', error);
       alert('Failed to approve content');
+    } finally {
+      setApprovingId(null);
     }
   };
 
@@ -301,10 +307,13 @@ export const ApprovalQueue: React.FC = () => {
                     <>
                       <button
                         onClick={() => handleApprove(item._id)}
-                        className="btn-success flex items-center space-x-2"
+                        disabled={approvingId === item._id}
+                        className={approvingId === item._id
+                          ? "btn-secondary flex items-center space-x-2 cursor-wait opacity-75"
+                          : "btn-success flex items-center space-x-2"}
                       >
-                        <FaCheck />
-                        <span>Approve</span>
+                        {approvingId === item._id ? <FaSync className="animate-spin" /> : <FaCheck />}
+                        <span>{approvingId === item._id ? 'Posting...' : 'Approve'}</span>
                       </button>
                       <button
                         onClick={() => handleReject(item._id)}
