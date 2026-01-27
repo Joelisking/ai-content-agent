@@ -14,8 +14,13 @@ import { AIAgentService } from '../services/aiAgent.service';
 import { PostingService } from '../services/posting.service';
 import { contentScheduler } from '../services/contentScheduler.service';
 import { emailService } from '../services/email.service';
+import authRoutes from './auth';
+import { authMiddleware } from '../middleware/auth.middleware';
 
 const router = express.Router();
+
+// Public routes
+router.use('/auth', authRoutes);
 
 // Initialize services
 
@@ -81,6 +86,11 @@ const uploadToCloudinary = (
 };
 
 // ==================== BRAND CONFIGURATION ====================
+
+// Protect all brand routes (or select ones) here
+// For now, let's protect modifications but maybe allow viewing?
+// Actually, case study requirements imply strict control. Let's protect all.
+router.use('/brand', authMiddleware);
 
 router.post('/brand', async (req, res) => {
   try {
@@ -150,6 +160,8 @@ router.put('/brand/:id', async (req, res) => {
 });
 
 // ==================== MEDIA UPLOAD ====================
+
+router.use('/media', authMiddleware);
 
 router.post(
   '/media/upload',
@@ -312,6 +324,8 @@ router.delete('/media/:id', async (req, res) => {
 });
 
 // ==================== CONTENT GENERATION ====================
+
+router.use('/content', authMiddleware);
 
 // Async function to process AI generation in the background
 async function processGenerationAsync(contentId: string) {
@@ -952,6 +966,8 @@ router.get('/posting/stats', async (req, res) => {
 
 // ==================== SYSTEM CONTROL ====================
 
+router.use('/system', authMiddleware);
+
 router.get('/system/control', async (req, res) => {
   try {
     let control = await SystemControl.findOne().sort({
@@ -1027,6 +1043,8 @@ router.post('/system/control', async (req, res) => {
 });
 
 // ==================== AUDIT LOGS ====================
+
+router.use('/audit', authMiddleware);
 
 router.get('/audit', async (req, res) => {
   try {

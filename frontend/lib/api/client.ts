@@ -7,6 +7,34 @@ const api = axios.create({
   },
 });
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (
+      error.response?.status === 401 &&
+      typeof window !== 'undefined'
+    ) {
+      // Let the AuthContext handle the redirect if needed
+    }
+    return Promise.reject(error);
+  },
+);
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (
+      error.response?.status === 401 &&
+      typeof window !== 'undefined'
+    ) {
+      // Let the AuthContext handle the redirect if needed,
+      // but essentially this indicates session is invalid.
+      // We can also trigger diverse handling here.
+    }
+    return Promise.reject(error);
+  },
+);
+
 export interface GenerationSchedule {
   enabled: boolean;
   frequency: 'daily' | 'weekly' | 'custom';
@@ -159,8 +187,10 @@ export const apiClient = {
 
   getContentById: (id: string) => api.get<Content>(`/content/${id}`),
 
-  updateContent: (id: string, data: { text?: string; hashtags?: string[] }) =>
-    api.put<Content>(`/content/${id}`, data),
+  updateContent: (
+    id: string,
+    data: { text?: string; hashtags?: string[] },
+  ) => api.put<Content>(`/content/${id}`, data),
 
   approveContent: (
     id: string,
@@ -200,15 +230,35 @@ export const apiClient = {
 
   // Content Generation Schedules
   updateBrandSchedule: (id: string, schedule: GenerationSchedule) =>
-    api.put<Brand>(`/brands/${id}/schedule`, { generationSchedule: schedule }),
+    api.put<Brand>(`/brands/${id}/schedule`, {
+      generationSchedule: schedule,
+    }),
   getUpcomingSchedules: (hours?: number) =>
-    api.get<Array<{
-      brandId: string;
-      brandName: string;
-      platform: string;
-      scheduledFor: string;
-      time: string;
-    }>>('/schedules/upcoming', { params: { hours } }),
+    api.get<
+      Array<{
+        brandId: string;
+        brandName: string;
+        platform: string;
+        scheduledFor: string;
+        time: string;
+      }>
+    >('/schedules/upcoming', { params: { hours } }),
+
+  // Auth
+  register: (
+    email: string,
+    password: string,
+    name: string,
+    secretKey?: string,
+  ) =>
+    api.post('/auth/register', { email, password, name, secretKey }),
+
+  login: (email: string, password: string) =>
+    api.post('/auth/login', { email, password }),
+
+  logout: () => api.post('/auth/logout'),
+
+  getMe: () => api.get('/auth/me'),
 };
 
 export default api;
