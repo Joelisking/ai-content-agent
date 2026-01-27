@@ -53,6 +53,7 @@ export interface User {
   createdAt: string;
   linkedinName?: string;
   linkedinAvatar?: string;
+  instagramUsername?: string;
 }
 
 export interface Brand {
@@ -282,6 +283,11 @@ export const apiClient = {
   getLinkedInAuthUrl: () =>
     api.get<{ url: string }>('/linkedin/auth'),
   disconnectLinkedIn: () => api.post('/linkedin/disconnect'),
+
+  // Instagram
+  getInstagramAuthUrl: () =>
+    api.get<{ url: string }>('/instagram/auth'),
+  disconnectInstagram: () => api.post('/instagram/disconnect'),
 };
 
 export default api;

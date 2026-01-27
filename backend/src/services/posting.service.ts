@@ -4,8 +4,10 @@ import {
   SystemControl,
   AuditLog,
   MediaUpload,
+  User,
 } from '../models';
 import { instagramService } from './instagram.service';
+import { linkedinService } from './linkedin.service';
 
 interface PostingResult {
   success: boolean;
@@ -175,9 +177,19 @@ export class PostingService {
           );
         }
 
+        // Try to get an Admin user's Instagram token
+        // In a real multi-tenant app, we'd look up the specific user who owns this content or brand.
+        // For this MVP, we look for ANY admin with a connected Instagram account.
+        const adminWithIg = await User.findOne({
+          role: 'admin',
+          instagramAccessToken: { $exists: true, $ne: '' },
+        });
+
         const result = await instagramService.publishContent(
           imageUrl,
           content.content.text,
+          adminWithIg?.instagramAccessToken,
+          adminWithIg?.instagramId,
         );
 
         return {
@@ -194,12 +206,53 @@ export class PostingService {
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // Generate mock post URL
+    // Generate mock post URL
     const platformUrls = {
       linkedin: `https://linkedin.com/posts/mock-${Date.now()}`,
       instagram: `https://instagram.com/p/mock-${Date.now()}`,
       twitter: `https://twitter.com/status/mock-${Date.now()}`,
       facebook: `https://facebook.com/posts/mock-${Date.now()}`,
     };
+
+    if (content.platform === 'linkedin') {
+      try {
+        console.log('🔗 Attempting to publish to LinkedIn...');
+
+        // Check for Admin User Token first
+        const adminWithLi = await User.findOne({
+          role: 'admin',
+          linkedinAccessToken: { $exists: true, $ne: '' },
+        });
+
+        // Resolve Image URL if present
+        let imageUrl: string | undefined;
+        if (
+          content.content.mediaIds &&
+          content.content.mediaIds.length > 0
+        ) {
+          const media = await MediaUpload.findById(
+            content.content.mediaIds[0],
+          );
+          if (media && media.path && media.path.startsWith('http')) {
+            imageUrl = media.path;
+          }
+        }
+
+        const result = await linkedinService.createPost(
+          content.content.text,
+          adminWithLi?.linkedinAccessToken,
+          adminWithLi?.linkedinId,
+          imageUrl, // Pass image URL
+        );
+
+        return {
+          success: true,
+          postUrl: `https://linkedin.com/feed/update/${result.id}`,
+        };
+      } catch (error) {
+        throw error;
+      }
+    }
 
     const postUrl =
       platformUrls[content.platform as keyof typeof platformUrls];

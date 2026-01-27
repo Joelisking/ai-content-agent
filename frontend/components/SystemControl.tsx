@@ -1,17 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { FaPause, FaPlay, FaExclamationTriangle, FaHandPaper, FaCheckCircle, FaCog, FaLinkedin, FaUnlink } from 'react-icons/fa';
+import { FaPause, FaPlay, FaExclamationTriangle, FaHandPaper, FaCheckCircle, FaCog, FaLinkedin, FaUnlink, FaInstagram } from 'react-icons/fa';
 import { apiClient, SystemControl as SystemControlType } from '../lib/api/client';
-// import { Button } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "sonner"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 export const SystemControl: React.FC = () => {
   const { user, login } = useAuth(); // We might need to refresh user, usually getMe or just refresh page.
   const [control, setControl] = useState<SystemControlType | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Modal states
+  const [pauseModalOpen, setPauseModalOpen] = useState(false);
+  const [pauseReason, setPauseReason] = useState('');
+  const [crisisModalOpen, setCrisisModalOpen] = useState(false);
+  const [crisisReason, setCrisisReason] = useState('');
+  const [disconnectLinkedInModal, setDisconnectLinkedInModal] = useState(false);
+  const [disconnectInstagramModal, setDisconnectInstagramModal] = useState(false);
 
   useEffect(() => {
     fetchControl();
@@ -108,8 +119,8 @@ export const SystemControl: React.FC = () => {
         <Card className={`cursor-pointer transition-all hover:ring-2 hover:ring-yellow-500 hover:-translate-y-1 ${control.mode === 'paused' ? 'border-yellow-500 bg-yellow-500/5' : ''
           }`} onClick={() => {
             if (loading || control.mode === 'paused') return;
-            const reason = prompt('Reason for pausing (optional):');
-            updateMode('paused', reason || undefined);
+            setPauseReason('');
+            setPauseModalOpen(true);
           }}>
           <CardHeader className="text-center pb-2">
             <div className="mx-auto rounded-full bg-yellow-100 p-4 mb-2">
@@ -140,11 +151,8 @@ export const SystemControl: React.FC = () => {
         <Card className={`cursor-pointer transition-all hover:ring-2 hover:ring-destructive hover:-translate-y-1 ${control.mode === 'crisis' ? 'border-destructive bg-destructive/5' : ''
           }`} onClick={() => {
             if (loading || control.mode === 'crisis') return;
-            // Shadcn Dialog would be better here but standard confirm/prompt is robust for critical actions
-            if (confirm('CRISIS MODE: This will immediately stop all content generation and posting. Continue?')) {
-              const reason = prompt('Crisis reason (required):');
-              if (reason) updateMode('crisis', reason);
-            }
+            setCrisisReason('');
+            setCrisisModalOpen(true);
           }}>
           <CardHeader className="text-center pb-2">
             <div className="mx-auto rounded-full bg-destructive/10 p-4 mb-2">
@@ -178,6 +186,10 @@ export const SystemControl: React.FC = () => {
                   <p className="text-sm text-green-600 flex items-center gap-1">
                     <FaCheckCircle className="w-3 h-3" /> Connected as {user.linkedinName}
                   </p>
+                ) : control?.systemConnections?.linkedin ? (
+                  <p className="text-sm text-blue-600 flex items-center gap-1">
+                    <FaCheckCircle className="w-3 h-3" /> Connected via System (.env)
+                  </p>
                 ) : (
                   <p className="text-sm text-muted-foreground">Not connected</p>
                 )}
@@ -187,16 +199,7 @@ export const SystemControl: React.FC = () => {
               {user?.linkedinName ? (
                 <button
                   className="px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-md hover:bg-red-50 transition-colors flex items-center gap-2"
-                  onClick={async () => {
-                    if (confirm('Are you sure you want to disconnect LinkedIn?')) {
-                      try {
-                        await apiClient.disconnectLinkedIn();
-                        window.location.reload(); // Simple reload to refresh auth context state from server
-                      } catch (e) {
-                        toast.error('Failed to disconnect');
-                      }
-                    }
-                  }}
+                  onClick={() => setDisconnectLinkedInModal(true)}
                 >
                   <FaUnlink /> Disconnect
                 </button>
@@ -213,6 +216,52 @@ export const SystemControl: React.FC = () => {
                   }}
                 >
                   Connect LinkedIn
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/50 mt-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-white rounded-full border shadow-sm">
+                <FaInstagram className="text-2xl text-[#E1306C]" />
+              </div>
+              <div>
+                <h4 className="font-semibold">Instagram Business</h4>
+                {user?.instagramUsername ? (
+                  <p className="text-sm text-green-600 flex items-center gap-1">
+                    <FaCheckCircle className="w-3 h-3" /> Connected as @{user.instagramUsername}
+                  </p>
+                ) : control?.systemConnections?.instagram ? (
+                  <p className="text-sm text-blue-600 flex items-center gap-1">
+                    <FaCheckCircle className="w-3 h-3" /> Connected via System (.env)
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not connected</p>
+                )}
+              </div>
+            </div>
+            <div>
+              {user?.instagramUsername ? (
+                <button
+                  className="px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-md hover:bg-red-50 transition-colors flex items-center gap-2"
+                  onClick={() => setDisconnectInstagramModal(true)}
+                >
+                  <FaUnlink /> Disconnect
+                </button>
+              ) : (
+                <button
+                  className="px-4 py-2 text-sm font-medium text-white bg-[#E1306C] rounded-md hover:bg-[#C13584] transition-colors shadow-sm"
+                  onClick={async () => {
+                    try {
+                      const { data } = await apiClient.getInstagramAuthUrl();
+                      window.location.href = data.url;
+                    } catch (e) {
+                      toast.error('Failed to start connection flow');
+                    }
+                  }}
+                >
+                  Connect Instagram
                 </button>
               )}
             </div>
@@ -272,6 +321,144 @@ export const SystemControl: React.FC = () => {
           )}
         </CardContent>
       </Card>
-    </div>
+
+      {/* Pause Mode Modal */}
+      <Dialog open={pauseModalOpen} onOpenChange={setPauseModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FaPause className="text-yellow-600" /> Pause System
+            </DialogTitle>
+            <DialogDescription>
+              All automation will be halted. No content generation or posting will occur.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="pause-reason">Reason (optional)</Label>
+            <Input
+              id="pause-reason"
+              placeholder="Enter reason for pausing..."
+              value={pauseReason}
+              onChange={(e) => setPauseReason(e.target.value)}
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPauseModalOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-yellow-600 hover:bg-yellow-700"
+              onClick={() => {
+                updateMode('paused', pauseReason || undefined);
+                setPauseModalOpen(false);
+              }}
+              disabled={loading}
+            >
+              <FaPause className="mr-2 h-4 w-4" /> Pause System
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Crisis Mode Modal */}
+      <Dialog open={crisisModalOpen} onOpenChange={setCrisisModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <FaExclamationTriangle /> Crisis Mode
+            </DialogTitle>
+            <DialogDescription>
+              <strong className="text-destructive">Warning:</strong> This will immediately stop all content generation and posting. All operations will be blocked.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="crisis-reason">Reason (required)</Label>
+            <Input
+              id="crisis-reason"
+              placeholder="Enter reason for activating crisis mode..."
+              value={crisisReason}
+              onChange={(e) => setCrisisReason(e.target.value)}
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCrisisModalOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (crisisReason.trim()) {
+                  updateMode('crisis', crisisReason);
+                  setCrisisModalOpen(false);
+                }
+              }}
+              disabled={loading || !crisisReason.trim()}
+            >
+              <FaExclamationTriangle className="mr-2 h-4 w-4" /> Activate Crisis Mode
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Disconnect LinkedIn Modal */}
+      <Dialog open={disconnectLinkedInModal} onOpenChange={setDisconnectLinkedInModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FaLinkedin className="text-[#0077b5]" /> Disconnect LinkedIn
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to disconnect your LinkedIn account? You will need to reconnect to post to LinkedIn.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDisconnectLinkedInModal(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                try {
+                  await apiClient.disconnectLinkedIn();
+                  setDisconnectLinkedInModal(false);
+                  window.location.reload();
+                } catch (e) {
+                  toast.error('Failed to disconnect');
+                }
+              }}
+            >
+              <FaUnlink className="mr-2 h-4 w-4" /> Disconnect
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Disconnect Instagram Modal */}
+      <Dialog open={disconnectInstagramModal} onOpenChange={setDisconnectInstagramModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FaInstagram className="text-[#E1306C]" /> Disconnect Instagram
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to disconnect your Instagram account? You will need to reconnect to post to Instagram.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDisconnectInstagramModal(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                try {
+                  await apiClient.disconnectInstagram();
+                  setDisconnectInstagramModal(false);
+                  window.location.reload();
+                } catch (e) {
+                  toast.error('Failed to disconnect');
+                }
+              }}
+            >
+              <FaUnlink className="mr-2 h-4 w-4" /> Disconnect
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div >
   );
 };

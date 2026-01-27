@@ -7,10 +7,156 @@ export class InstagramService {
     // Credentials accessed lazily to avoid init-order issues
   }
 
-  private getCredentials() {
-    const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
+  private getCredentials(token?: string) {
+    const accessToken =
+      token || process.env.INSTAGRAM_ACCESS_TOKEN || '';
     const accountId = process.env.INSTAGRAM_ACCOUNT_ID || '';
+    // If no token provided and no env token, we can't proceed.
+    // But accountId is also needed. For OAuth users, we need to fetch their pages to get account ID.
+    // Minimally, we need a token.
     return { accessToken, accountId };
+  }
+
+  getAuthUrl(state: string) {
+    const clientId = process.env.INSTAGRAM_CLIENT_ID;
+    const redirectUri = process.env.INSTAGRAM_REDIRECT_URI; // e.g. /api/instagram/callback
+    if (!clientId || !redirectUri)
+      throw new Error(
+        'Instagram Client ID/Redirect URI not configured',
+      );
+
+    // Scopes for Instagram Business
+    // instagram_basic, instagram_content_publish, pages_show_list, pages_read_engagement
+    const scope = [
+      'instagram_basic',
+      'instagram_content_publish',
+      'pages_show_list',
+      'pages_read_engagement',
+    ].join(',');
+
+    return `https://www.facebook.com/v18.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&scope=${scope}&response_type=code`;
+  }
+
+  async exchangeCodeForToken(code: string) {
+    const clientId = process.env.INSTAGRAM_CLIENT_ID;
+    const clientSecret = process.env.INSTAGRAM_CLIENT_SECRET;
+    const redirectUri = process.env.INSTAGRAM_REDIRECT_URI;
+
+    if (!clientId || !clientSecret || !redirectUri)
+      throw new Error('Instagram Credentials missing');
+
+    try {
+      // Exchange code for short-lived token
+      const response = await axios.get(
+        `https://graph.facebook.com/v18.0/oauth/access_token`,
+        {
+          params: {
+            client_id: clientId,
+            redirect_uri: redirectUri,
+            client_secret: clientSecret,
+            code: code,
+          },
+        },
+      );
+      const shortLivedToken = response.data.access_token;
+
+      // Exchange for long-lived token (60 days)
+      const longLivedResponse = await axios.get(
+        `https://graph.facebook.com/v18.0/oauth/access_token`,
+        {
+          params: {
+            grant_type: 'fb_exchange_token',
+            client_id: clientId,
+            client_secret: clientSecret,
+            fb_exchange_token: shortLivedToken,
+          },
+        },
+      );
+
+      return longLivedResponse.data; // { access_token, expires_in, ... }
+    } catch (error: any) {
+      console.error(
+        'Instagram Token Exchange Failed:',
+        error.response?.data || error.message,
+      );
+      throw new Error('Failed to exchange Instagram code');
+    }
+  }
+
+  async getProfile(accessToken: string) {
+    try {
+      // 1. Get User's Pages
+      const pagesResponse = await axios.get(
+        `${this.baseUrl}/me/accounts`,
+        {
+          params: { access_token: accessToken },
+        },
+      );
+
+      const pages = pagesResponse.data.data;
+      if (!pages || pages.length === 0)
+        throw new Error(
+          'No Facebook Pages found. Make sure you have a Page.',
+        );
+
+      // 2. Find the first Page with a connected Instagram Business Account
+      let igBusinessAccount = null;
+      let pageName = '';
+
+      for (const page of pages) {
+        // We need to get the IG Business ID for this page
+        const pageDetails = await axios.get(
+          `${this.baseUrl}/${page.id}`,
+          {
+            params: {
+              fields: 'instagram_business_account',
+              access_token: page.access_token, // Page access token, or user token? User token usually works if scope is right.
+              // Actually, we use the user access token to read 'accounts'.
+              // But to interact, we might need page token?
+              // For IG Content Publishing, we use User Access Token with permissions.
+            },
+          },
+        );
+
+        if (pageDetails.data.instagram_business_account) {
+          igBusinessAccount =
+            pageDetails.data.instagram_business_account;
+          pageName = page.name;
+          break;
+        }
+      }
+
+      if (!igBusinessAccount)
+        throw new Error(
+          'No Instagram Business Account connected to your Facebook Pages.',
+        );
+
+      // 3. Get IG Username
+      const igDetails = await axios.get(
+        `${this.baseUrl}/${igBusinessAccount.id}`,
+        {
+          params: {
+            fields: 'username,profile_picture_url',
+            access_token: accessToken,
+          },
+        },
+      );
+
+      return {
+        id: igBusinessAccount.id,
+        username: igDetails.data.username,
+        access_token: accessToken, // We keep the User Long-Lived Token
+      };
+    } catch (error: any) {
+      console.error(
+        'Instagram Profile Fetch Failed:',
+        error.response?.data || error.message,
+      );
+      throw new Error(
+        'Failed to fetch Instagram profile: ' +
+          (error.response?.data?.error?.message || error.message),
+      );
+    }
   }
 
   /**
@@ -34,7 +180,9 @@ export class InstagramService {
       );
 
       const statusCode = statusResponse.data.status_code;
-      console.log(`Container status (attempt ${attempt}/${maxAttempts}): ${statusCode}`);
+      console.log(
+        `Container status (attempt ${attempt}/${maxAttempts}): ${statusCode}`,
+      );
 
       if (statusCode === 'FINISHED') {
         return;
@@ -61,8 +209,19 @@ export class InstagramService {
   async publishContent(
     imageUrl: string,
     caption: string,
+    overrideToken?: string,
+    overrideAccountId?: string,
   ): Promise<{ id: string; permalink: string }> {
-    const { accessToken, accountId } = this.getCredentials();
+    // If override provided, use it. Otherwise fall back to env via getCredentials.
+    // Note: getCredentials now takes optional token but we handle logic here for clarity.
+    let accessToken = overrideToken;
+    let accountId = overrideAccountId;
+
+    if (!accessToken || !accountId) {
+      const creds = this.getCredentials();
+      if (!accessToken) accessToken = creds.accessToken;
+      if (!accountId) accountId = creds.accountId;
+    }
 
     if (!accessToken || !accountId) {
       throw new Error('Instagram credentials not configured in .env');
