@@ -10,6 +10,7 @@ interface User {
     name: string;
     role: 'admin' | 'editor';
     linkedinName?: string;
+    instagramUsername?: string;
 }
 
 interface AuthContextType {

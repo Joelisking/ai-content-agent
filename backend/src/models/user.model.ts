@@ -12,6 +12,9 @@ export interface IUser extends Document {
   linkedinAccessToken?: string;
   linkedinName?: string;
   linkedinAvatar?: string;
+  instagramId?: string;
+  instagramAccessToken?: string;
+  instagramUsername?: string;
   comparePassword(password: string): Promise<boolean>;
 }
 
@@ -35,6 +38,9 @@ const UserSchema = new Schema<IUser>(
     linkedinAccessToken: { type: String },
     linkedinName: { type: String },
     linkedinAvatar: { type: String },
+    instagramId: { type: String },
+    instagramAccessToken: { type: String },
+    instagramUsername: { type: String },
   },
   { timestamps: true },
 );

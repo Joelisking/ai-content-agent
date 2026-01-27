@@ -39,6 +39,15 @@ export const ApprovalQueue: React.FC = () => {
   const [scheduleDate, setScheduleDate] = useState<Date | undefined>(undefined);
   const [scheduleTime, setScheduleTime] = useState<string>('');
 
+  // Reject Modal State
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [selectedRejectId, setSelectedRejectId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  // Post Now Confirmation Modal State
+  const [postNowModalOpen, setPostNowModalOpen] = useState(false);
+  const [selectedPostNowId, setSelectedPostNowId] = useState<string | null>(null);
+
   useEffect(() => {
     fetchContent();
   }, [filter]);
@@ -101,21 +110,37 @@ export const ApprovalQueue: React.FC = () => {
       toast.success(scheduledFor ? 'Content scheduled!' : 'Content approved and posted!');
       setApproveModalOpen(false);
       await fetchContent();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error approving content:', error);
-      toast.error('Failed to approve content');
+
+      // Check if this is a posting error (content approved but posting failed)
+      const responseData = error?.response?.data;
+      if (responseData?.postingError) {
+        toast.error(`Content approved but posting failed: ${responseData.postingError}`);
+        // Still close modal and refresh since content was approved
+        setApproveModalOpen(false);
+        await fetchContent();
+      } else {
+        toast.error(responseData?.error || 'Failed to approve content');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleReject = async (id: string) => {
-    const reason = prompt('Reason for rejection:');
-    if (!reason) return;
+  const handleReject = (id: string) => {
+    setSelectedRejectId(id);
+    setRejectReason('');
+    setRejectModalOpen(true);
+  };
+
+  const handleRejectSubmit = async () => {
+    if (!selectedRejectId || !rejectReason.trim()) return;
 
     try {
-      await apiClient.rejectContent(id, 'admin', reason);
+      await apiClient.rejectContent(selectedRejectId, 'admin', rejectReason);
       toast.info('Content rejected');
+      setRejectModalOpen(false);
       await fetchContent();
     } catch (error) {
       console.error('Error rejecting content:', error);
@@ -146,14 +171,19 @@ export const ApprovalQueue: React.FC = () => {
     }
   };
 
-  const handlePostNow = async (id: string) => {
-    // We can use a custom confirmation dialog, but window.confirm is fine for now to match logic
-    if (!confirm('Post this content immediately?')) return;
+  const handlePostNow = (id: string) => {
+    setSelectedPostNowId(id);
+    setPostNowModalOpen(true);
+  };
 
-    setLoading(true); // User added loading state here
+  const handlePostNowSubmit = async () => {
+    if (!selectedPostNowId) return;
+
+    setLoading(true);
     try {
-      await apiClient.postContent(id, 'admin');
+      await apiClient.postContent(selectedPostNowId, 'admin');
       toast.success('Content posted successfully!');
+      setPostNowModalOpen(false);
       await fetchContent();
     } catch (error) {
       console.error('Error posting content:', error);
@@ -540,6 +570,66 @@ export const ApprovalQueue: React.FC = () => {
               {scheduleDate
                 ? (loading ? 'Scheduling...' : 'Schedule')
                 : (loading ? 'Posting...' : 'Approve Now')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Modal */}
+      <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <FaTimes /> Reject Content
+            </DialogTitle>
+            <DialogDescription>
+              Please provide a reason for rejecting this content. This feedback may be used for regeneration.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="reject-reason">Reason for rejection</Label>
+            <Textarea
+              id="reject-reason"
+              placeholder="E.g., Tone doesn't match brand voice, factually incorrect, too promotional..."
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={3}
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectModalOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={handleRejectSubmit}
+              disabled={!rejectReason.trim()}
+            >
+              <FaTimes className="mr-2 h-4 w-4" /> Reject
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Post Now Confirmation Modal */}
+      <Dialog open={postNowModalOpen} onOpenChange={setPostNowModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FaRocket className="text-primary" /> Post Content Now
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to post this content immediately? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPostNowModalOpen(false)}>Cancel</Button>
+            <Button onClick={handlePostNowSubmit} disabled={loading}>
+              {loading ? (
+                <FaSync className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FaRocket className="mr-2 h-4 w-4" />
+              )}
+              {loading ? 'Posting...' : 'Post Now'}
             </Button>
           </DialogFooter>
         </DialogContent>

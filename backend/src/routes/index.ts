@@ -857,7 +857,6 @@ router.post('/content/:id/approve', async (req, res) => {
     });
 
     // Auto-post if not scheduled and system is not paused
-    let autoPosted = false;
     if (!scheduledFor) {
       const systemControl = await SystemControl.findOne().sort({
         lastChangedAt: -1,
@@ -866,19 +865,31 @@ router.post('/content/:id/approve', async (req, res) => {
         systemControl?.mode !== 'paused' &&
         systemControl?.mode !== 'crisis'
       ) {
-        // Post immediately
-        await postingService.postImmediately(
+        // Post immediately and check result
+        const postResult = await postingService.postImmediately(
           content._id.toString(),
           approvedBy || 'admin',
         );
-        autoPosted = true;
+
         // Refresh content to get updated status
-        const updatedContent = await ContentQueue.findById(
-          req.params.id,
-        );
+        const updatedContent = await ContentQueue.findById(req.params.id);
+
+        if (!postResult.success) {
+          // Posting failed - return error with details
+          return res.status(422).json({
+            ...updatedContent?.toObject(),
+            message: 'Content approved but posting failed',
+            postingError: postResult.error,
+            posted: false,
+          });
+        }
+
+        // Posting succeeded
         return res.json({
           ...updatedContent?.toObject(),
-          message: 'Content approved and posted immediately',
+          message: 'Content approved and posted successfully',
+          postUrl: postResult.postUrl,
+          posted: true,
         });
       }
     }
@@ -987,7 +998,15 @@ router.get('/system/control', async (req, res) => {
       await control.save();
     }
 
-    res.json(control);
+    const response = control.toObject();
+
+    // Check for system-level connections
+    const systemConnections = {
+      linkedin: !!process.env.LINKEDIN_ACCESS_TOKEN,
+      instagram: !!process.env.INSTAGRAM_ACCESS_TOKEN,
+    };
+
+    res.json({ ...response, systemConnections });
   } catch (error) {
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error',
