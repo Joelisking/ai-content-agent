@@ -9,9 +9,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Checkbox } from './ui/checkbox';
+
 
 export const BrandSettings: React.FC = () => {
     const [brands, setBrands] = useState<Brand[]>([]);
@@ -548,11 +548,10 @@ export const BrandSettings: React.FC = () => {
                                                     {platformOptions.map((platform) => (
                                                         <div
                                                             key={platform.value}
-                                                            className={`flex items-center space-x-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                                                                schedulePlatforms.includes(platform.value)
-                                                                    ? 'border-primary bg-primary/5'
-                                                                    : 'hover:bg-muted/50'
-                                                            }`}
+                                                            className={`flex items-center space-x-3 p-3 rounded-lg border cursor-pointer transition-colors ${schedulePlatforms.includes(platform.value)
+                                                                ? 'border-primary bg-primary/5'
+                                                                : 'hover:bg-muted/50'
+                                                                }`}
                                                             onClick={() => togglePlatform(platform.value)}
                                                         >
                                                             <Checkbox

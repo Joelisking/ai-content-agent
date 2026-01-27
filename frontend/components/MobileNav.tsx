@@ -4,7 +4,6 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/s
 import { Button } from '@/components/ui/button';
 import { FaBars } from 'react-icons/fa';
 import { Sidebar } from './Sidebar';
-import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 
 export function MobileNav() {
     return (
@@ -19,9 +18,7 @@ export function MobileNav() {
                     </Button>
                 </SheetTrigger>
                 <SheetContent side="left" className="p-0 w-64 border-r-sidebar-border bg-sidebar text-sidebar-foreground">
-                    <VisuallyHidden.Root>
-                        <SheetTitle>Navigation Menu</SheetTitle>
-                    </VisuallyHidden.Root>
+                    <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
                     <Sidebar />
                 </SheetContent>
             </Sheet>
