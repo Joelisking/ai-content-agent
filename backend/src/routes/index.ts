@@ -659,7 +659,11 @@ router.post('/content/generate', async (req, res) => {
 
 router.post('/content/:id/regenerate', async (req, res) => {
   try {
-    const { feedback, platform: newPlatform } = req.body;
+    const {
+      feedback,
+      platform: newPlatform,
+      generateImage,
+    } = req.body;
     const content = await ContentQueue.findById(req.params.id);
 
     if (!content) {
@@ -678,6 +682,76 @@ router.post('/content/:id/regenerate', async (req, res) => {
     // Determine target platform
     const targetPlatform = newPlatform || content.platform;
 
+    // If only generating image without regenerating text
+    if (
+      generateImage &&
+      feedback?.includes('keeping the text the same')
+    ) {
+      // Generate image only
+      if (!process.env.OPENAI_API_KEY) {
+        return res.status(400).json({
+          error:
+            'Image generation requires OPENAI_API_KEY to be configured',
+        });
+      }
+
+      try {
+        const imageResult = await aiAgent.generateImageForContent(
+          content.content.text,
+          targetPlatform,
+        );
+
+        if (imageResult.imageUrl) {
+          // Save generated image
+          const generatedMedia = new MediaUpload({
+            filename: `ai-generated-${Date.now()}`,
+            originalName: 'AI Generated Image',
+            mimetype: 'image/png',
+            size: 0,
+            path: imageResult.imageUrl,
+            metadata: {
+              aiGenerated: true,
+              imagePrompt: imageResult.imagePrompt,
+            },
+          });
+          await generatedMedia.save();
+
+          content.content.mediaIds = [generatedMedia._id];
+          (content.metadata as any).generatedImageId =
+            generatedMedia._id.toString();
+          (content.metadata as any).generatedImageUrl =
+            imageResult.imageUrl;
+          (content.metadata as any).imagePrompt =
+            imageResult.imagePrompt;
+
+          await content.save();
+
+          await AuditLog.create({
+            action: 'image_generated',
+            performedBy: req.body.performedBy || 'user',
+            entityType: 'content',
+            entityId: content._id.toString(),
+            details: {
+              imagePrompt: imageResult.imagePrompt,
+            },
+          });
+
+          return res.json({
+            ...content.toObject(),
+            message: 'Image generated successfully',
+          });
+        }
+      } catch (imageError) {
+        console.error('Error generating image:', imageError);
+        return res.status(500).json({
+          error:
+            imageError instanceof Error
+              ? imageError.message
+              : 'Failed to generate image',
+        });
+      }
+    }
+
     // Generate new version
     const regenerated = await aiAgent.regenerateContent(
       content.content.text,
@@ -685,6 +759,7 @@ router.post('/content/:id/regenerate', async (req, res) => {
       {
         brandConfig,
         platform: targetPlatform,
+        generateImage: generateImage,
       },
     );
 
@@ -709,6 +784,29 @@ router.post('/content/:id/regenerate', async (req, res) => {
     content.metadata.previousVersions.push(previousVersion);
     content.status = 'pending';
 
+    // Handle generated image
+    if (generateImage && regenerated.imageUrl) {
+      const generatedMedia = new MediaUpload({
+        filename: `ai-generated-${Date.now()}`,
+        originalName: 'AI Generated Image',
+        mimetype: 'image/png',
+        size: 0,
+        path: regenerated.imageUrl,
+        metadata: {
+          aiGenerated: true,
+          imagePrompt: regenerated.imagePrompt,
+        },
+      });
+      await generatedMedia.save();
+
+      content.content.mediaIds = [generatedMedia._id];
+      (content.metadata as any).generatedImageId =
+        generatedMedia._id.toString();
+      (content.metadata as any).generatedImageUrl =
+        regenerated.imageUrl;
+      (content.metadata as any).imagePrompt = regenerated.imagePrompt;
+    }
+
     await content.save();
 
     await AuditLog.create({
@@ -719,6 +817,7 @@ router.post('/content/:id/regenerate', async (req, res) => {
       details: {
         feedback,
         version: content.metadata.version,
+        imageGenerated: !!generateImage,
       },
     });
 
@@ -737,14 +836,44 @@ router.post('/content/:id/regenerate', async (req, res) => {
 
 router.get('/content', async (req, res) => {
   try {
-    const { status, platform } = req.query;
+    const {
+      status,
+      platform,
+      search,
+      generatedBy,
+      user,
+      sortBy,
+      sortOrder,
+    } = req.query;
     const filter: any = {};
 
-    if (status) filter.status = status;
-    if (platform) filter.platform = platform;
+    if (status && status !== 'all') filter.status = status;
+    if (platform && platform !== 'all') filter.platform = platform;
+    if (generatedBy && generatedBy !== 'all')
+      filter.generatedBy = generatedBy;
+
+    if (user) {
+      const userRegex = { $regex: user, $options: 'i' };
+      if (status === 'approved' || status === 'posted') {
+        filter.approvedBy = userRegex;
+      } else if (status === 'rejected') {
+        filter.rejectedBy = userRegex;
+      }
+      // For pending/all, we don't have a specific 'createdBy' user field on the model yet,
+      // so we skip user filtering for those or could check multiple fields using $or if needed.
+    }
+
+    if (search) {
+      filter['content.text'] = { $regex: search, $options: 'i' };
+    }
+
+    // Sorting logic
+    const sortField = (sortBy as string) || 'createdAt';
+    const order = sortOrder === 'asc' ? 1 : -1;
+    const sortOptions: any = { [sortField]: order };
 
     const content = await ContentQueue.find(filter)
-      .sort({ createdAt: -1 })
+      .sort(sortOptions)
       .populate('content.mediaIds');
     res.json(content);
   } catch (error) {
@@ -771,17 +900,20 @@ router.get('/content/:id', async (req, res) => {
 // Update content text (for manual edits)
 router.put('/content/:id', async (req, res) => {
   try {
-    const { text, hashtags } = req.body;
+    const { text, hashtags, mediaIds } = req.body;
     const content = await ContentQueue.findById(req.params.id);
 
     if (!content) {
       return res.status(404).json({ error: 'Content not found' });
     }
 
-    // Only allow editing pending content
-    if (content.status !== 'pending') {
+    // Allow editing pending or approved content (for adding media before posting)
+    if (
+      content.status !== 'pending' &&
+      content.status !== 'approved'
+    ) {
       return res.status(400).json({
-        error: `Cannot edit content with status '${content.status}'. Only pending content can be edited.`,
+        error: `Cannot edit content with status '${content.status}'. Only pending or approved content can be edited.`,
       });
     }
 
@@ -791,6 +923,9 @@ router.put('/content/:id', async (req, res) => {
     }
     if (hashtags !== undefined) {
       content.content.hashtags = hashtags;
+    }
+    if (mediaIds !== undefined) {
+      content.content.mediaIds = mediaIds;
     }
 
     // Mark as manually edited
@@ -872,7 +1007,9 @@ router.post('/content/:id/approve', async (req, res) => {
         );
 
         // Refresh content to get updated status
-        const updatedContent = await ContentQueue.findById(req.params.id);
+        const updatedContent = await ContentQueue.findById(
+          req.params.id,
+        );
 
         if (!postResult.success) {
           // Posting failed - return error with details
