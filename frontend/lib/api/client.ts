@@ -212,10 +212,12 @@ export const apiClient = {
     id: string,
     approvedBy: string,
     scheduledFor?: string,
+    approveOnly?: boolean,
   ) =>
     api.post<Content>(`/content/${id}/approve`, {
       approvedBy,
       scheduledFor,
+      approveOnly,
     }),
 
   rejectContent: (id: string, rejectedBy: string, reason: string) =>

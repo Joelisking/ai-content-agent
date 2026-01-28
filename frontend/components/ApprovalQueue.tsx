@@ -115,7 +115,7 @@ export const ApprovalQueue: React.FC = () => {
     setApproveModalOpen(true);
   };
 
-  const handleApproveSubmit = async () => {
+  const handleApproveSubmit = async (approveOnly: boolean = false) => {
     if (!selectedApproveId) return;
     let scheduledFor: string | undefined = undefined;
     if (scheduleDate && scheduleDateTime) {
@@ -124,37 +124,41 @@ export const ApprovalQueue: React.FC = () => {
       scheduledFor = combinedDate.toISOString();
     }
 
-    setLoading(true);
+    // Close modal immediately for non-blocking UX
+    setApproveModalOpen(false);
+
+    // Show processing toast
+    toast.info(approveOnly ? 'Approving content...' : (scheduledFor ? 'Scheduling content...' : 'Approving and posting...'));
+
     try {
-      const response = await apiClient.approveContent(selectedApproveId, 'admin', scheduledFor);
+      // Pass approveOnly flag
+      const response = await apiClient.approveContent(
+        selectedApproveId,
+        'admin',
+        scheduledFor,
+        approveOnly
+      );
+
       const data = response.data as any;
 
+      // Handle success/partial success
       if (data.posted === false && data.postingError) {
-        // Content approved but posting failed
         toast.warning(`Content approved but posting failed: ${data.postingError}`);
       } else if (data.posted === true) {
         toast.success('Content approved and posted!');
+      } else if (approveOnly) {
+        toast.success('Content approved (ready for later posting)');
       } else {
         toast.success(scheduledFor ? 'Content scheduled!' : 'Content approved!');
       }
 
-      setApproveModalOpen(false);
+      // Refresh list to show updated status
       await fetchContent();
     } catch (error: any) {
-      const responseData = error?.response?.data;
-
-      // Handle 422 - content approved but posting failed
-      if (error?.response?.status === 422 && responseData?.postingError) {
-        toast.warning(`Content approved but posting failed: ${responseData.postingError}`);
-        setApproveModalOpen(false);
-        await fetchContent();
-        return;
-      }
-
-      const msg = responseData?.error || responseData?.message || 'Failed to approve';
+      const msg = error?.response?.data?.error || 'Failed to approve';
       toast.error(msg);
-    } finally {
-      setLoading(false);
+      // Refresh anyway to ensure consistent state
+      fetchContent();
     }
   };
 
@@ -184,13 +188,16 @@ export const ApprovalQueue: React.FC = () => {
 
   const handleRegenerateSubmit = async () => {
     if (!selectedRegenerateId) return;
-    setLoading(true);
+
+    // Close modal immediately
     setRegenerateModalOpen(false);
+
+    // Show feedback
+    toast.info('Regenerating content...');
 
     try {
       // Start regeneration - returns immediately
       await apiClient.regenerateContent(selectedRegenerateId, regenerateFeedback, 'admin');
-      toast.info('Regenerating content...');
 
       // Poll for completion every 2 seconds
       const pollInterval = setInterval(async () => {
@@ -200,12 +207,10 @@ export const ApprovalQueue: React.FC = () => {
 
           if (updatedContent.generationStatus === 'completed') {
             clearInterval(pollInterval);
-            setLoading(false);
             toast.success('Content regenerated successfully!');
             await fetchContent();
           } else if (updatedContent.generationStatus === 'failed') {
             clearInterval(pollInterval);
-            setLoading(false);
             toast.error(updatedContent.generationError || 'Regeneration failed');
             await fetchContent();
           }
@@ -213,7 +218,6 @@ export const ApprovalQueue: React.FC = () => {
         } catch (pollError) {
           console.error('Error polling regeneration status:', pollError);
           clearInterval(pollInterval);
-          setLoading(false);
           toast.error('Failed to check regeneration status');
         }
       }, 2000);
@@ -221,13 +225,11 @@ export const ApprovalQueue: React.FC = () => {
       // Safety timeout: stop polling after 3 minutes
       setTimeout(() => {
         clearInterval(pollInterval);
-        setLoading(false);
         fetchContent();
       }, 180000);
 
     } catch (error) {
       toast.error('Failed to start regeneration');
-      setLoading(false);
     }
   };
 
@@ -444,7 +446,10 @@ export const ApprovalQueue: React.FC = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setApproveModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleApproveSubmit} className="bg-green-600 hover:bg-green-700 text-white">
+            <Button variant="outline" onClick={() => handleApproveSubmit(true)}>
+              Approve Only
+            </Button>
+            <Button onClick={() => handleApproveSubmit(false)} className="bg-green-600 hover:bg-green-700 text-white">
               {scheduleDate ? 'Schedule' : 'Approve & Post Now'}
             </Button>
           </DialogFooter>

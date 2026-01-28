@@ -9,6 +9,7 @@ import {
   ContentQueue,
   SystemControl,
   AuditLog,
+  Platform,
 } from '../models';
 import { AIAgentService } from '../services/aiAgent.service';
 import { PostingService } from '../services/posting.service';
@@ -664,22 +665,28 @@ router.post('/content/generate', async (req, res) => {
 });
 
 // Async function to process regeneration in the background
+// Note: Regeneration only updates text/hashtags - media is preserved unchanged
 async function processRegenerationAsync(
   contentId: string,
   feedback: string,
   newPlatform: string | undefined,
-  generateImage: boolean,
   performedBy: string,
 ) {
   try {
-    console.log(`🔄 [Background] Starting regeneration for ${contentId}`);
+    console.log(
+      `🔄 [Background] Starting regeneration for ${contentId}`,
+    );
     const content = await ContentQueue.findById(contentId);
     if (!content) {
-      console.error(`Content ${contentId} not found for regeneration`);
+      console.error(
+        `Content ${contentId} not found for regeneration`,
+      );
       return;
     }
 
-    const brandConfig = await BrandConfig.findById(content.brandConfigId);
+    const brandConfig = await BrandConfig.findById(
+      content.brandConfigId,
+    );
     if (!brandConfig) {
       await ContentQueue.findByIdAndUpdate(contentId, {
         generationStatus: 'failed',
@@ -700,12 +707,14 @@ async function processRegenerationAsync(
       feedback,
       {
         brandConfig,
-        platform: targetPlatform,
-        generateImage: generateImage,
+        platform: targetPlatform as Platform,
+        generateImage: false, // Never generate images during regeneration - user manages media separately
       },
     );
 
-    console.log(`🔄 [Background] Regeneration complete for ${contentId}`);
+    console.log(
+      `🔄 [Background] Regeneration complete for ${contentId}`,
+    );
 
     // Save previous version
     const previousVersion = {
@@ -715,7 +724,7 @@ async function processRegenerationAsync(
       timestamp: new Date(),
     };
 
-    // Prepare update data
+    // Prepare update data - only update text and hashtags, keep media unchanged
     const updateData: any = {
       'content.text': regenerated.text,
       'content.hashtags': regenerated.hashtags,
@@ -733,26 +742,8 @@ async function processRegenerationAsync(
       updateData.platform = newPlatform;
     }
 
-    // Handle generated image
-    if (generateImage && regenerated.imageUrl) {
-      const generatedMedia = new MediaUpload({
-        filename: `ai-generated-${Date.now()}`,
-        originalName: 'AI Generated Image',
-        mimetype: 'image/png',
-        size: 0,
-        path: regenerated.imageUrl,
-        metadata: {
-          aiGenerated: true,
-          imagePrompt: regenerated.imagePrompt,
-        },
-      });
-      await generatedMedia.save();
-
-      updateData['content.mediaIds'] = [generatedMedia._id.toString()];
-      updateData['metadata.generatedImageId'] = generatedMedia._id.toString();
-      updateData['metadata.generatedImageUrl'] = regenerated.imageUrl;
-      updateData['metadata.imagePrompt'] = regenerated.imagePrompt;
-    }
+    // Note: Media is intentionally NOT modified during regeneration
+    // Users can manually add/remove media after regeneration
 
     await ContentQueue.findByIdAndUpdate(contentId, updateData);
 
@@ -764,32 +755,41 @@ async function processRegenerationAsync(
       details: {
         feedback,
         version: content.metadata.version + 1,
-        imageGenerated: !!generateImage,
       },
     });
 
-    console.log(`🔄 [Background] Regeneration saved for ${contentId}`);
+    console.log(
+      `🔄 [Background] Regeneration saved for ${contentId}`,
+    );
   } catch (error) {
-    console.error(`🔄 [Background] Regeneration failed for ${contentId}:`, error);
+    console.error(
+      `🔄 [Background] Regeneration failed for ${contentId}:`,
+      error,
+    );
     await ContentQueue.findByIdAndUpdate(contentId, {
       generationStatus: 'failed',
-      generationError: error instanceof Error ? error.message : 'Unknown error',
+      generationError:
+        error instanceof Error ? error.message : 'Unknown error',
     });
   }
 }
 
 router.post('/content/:id/regenerate', async (req, res) => {
   try {
-    const { feedback, platform: newPlatform, generateImage } = req.body;
+    const { feedback, platform: newPlatform } = req.body;
     const content = await ContentQueue.findById(req.params.id);
 
     if (!content) {
       return res.status(404).json({ error: 'Content not found' });
     }
 
-    const brandConfig = await BrandConfig.findById(content.brandConfigId);
+    const brandConfig = await BrandConfig.findById(
+      content.brandConfigId,
+    );
     if (!brandConfig) {
-      return res.status(404).json({ error: 'Brand configuration not found' });
+      return res
+        .status(404)
+        .json({ error: 'Brand configuration not found' });
     }
 
     // Mark content as regenerating
@@ -804,9 +804,10 @@ router.post('/content/:id/regenerate', async (req, res) => {
       req.params.id,
       feedback || '',
       newPlatform,
-      generateImage || false,
       req.body.performedBy || 'user',
-    ).catch((err) => console.error('Background regeneration error:', err));
+    ).catch((err) =>
+      console.error('Background regeneration error:', err),
+    );
 
     // Return immediately with regenerating status
     res.json({
@@ -949,7 +950,7 @@ router.put('/content/:id', async (req, res) => {
 
 router.post('/content/:id/approve', async (req, res) => {
   try {
-    const { approvedBy, scheduledFor } = req.body;
+    const { approvedBy, scheduledFor, approveOnly } = req.body;
 
     // Check system mode - block approvals in crisis
     const systemControl = await SystemControl.findOne().sort({
@@ -991,11 +992,12 @@ router.post('/content/:id/approve', async (req, res) => {
       details: {
         platform: content.platform,
         scheduledFor: content.scheduledFor,
+        approveOnly,
       },
     });
 
-    // Auto-post if not scheduled and system is not paused
-    if (!scheduledFor) {
+    // Auto-post if not scheduled and system is not paused AND approveOnly is false
+    if (!scheduledFor && !approveOnly) {
       const systemControl = await SystemControl.findOne().sort({
         lastChangedAt: -1,
       });

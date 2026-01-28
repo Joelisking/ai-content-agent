@@ -89,7 +89,7 @@ export const linkedinService = {
 
       let mediaAsset = null;
       let shareMediaCategory = 'NONE';
-      let media = [];
+      let media: any[] = [];
 
       // If we have an image, upload it first
       if (imageUrl) {
