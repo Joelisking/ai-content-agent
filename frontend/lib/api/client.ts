@@ -185,22 +185,25 @@ export const apiClient = {
     id: string,
     feedback: string,
     performedBy?: string,
-    platform?: string,
+    generateImage?: boolean,
   ) =>
     api.post<Content>(`/content/${id}/regenerate`, {
       feedback,
       performedBy,
-      platform,
+      generateImage,
     }),
 
-  getContent: (params?: { status?: string; platform?: string }) =>
-    api.get<Content[]>('/content', { params }),
+  getContent: (params?: {
+    status?: string;
+    platform?: string;
+    search?: string;
+  }) => api.get<Content[]>('/content', { params }),
 
   getContentById: (id: string) => api.get<Content>(`/content/${id}`),
 
   updateContent: (
     id: string,
-    data: { text?: string; hashtags?: string[] },
+    data: { text?: string; hashtags?: string[]; mediaIds?: string[] },
   ) => api.put<Content>(`/content/${id}`, data),
 
   approveContent: (

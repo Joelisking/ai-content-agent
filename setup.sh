@@ -63,6 +63,15 @@ fi
 echo "Installing backend dependencies..."
 npm install
 
+echo "🌱 Seeding database..."
+# Attempt to seed, but don't fail the whole script if mongo isn't running
+if npm run seed; then
+    echo -e "${GREEN}✅ Database seeded successfully${NC}"
+else
+    echo -e "${YELLOW}⚠️  Database seeding failed. Is MongoDB running?${NC}"
+    echo -e "${YELLOW}   You can try seeding later with: cd backend && npm run seed${NC}"
+fi
+
 echo ""
 echo "🔧 Setting up frontend..."
 cd ../frontend
@@ -79,11 +88,9 @@ echo "📝 Next steps:"
 echo "   1. Edit backend/.env and add your ANTHROPIC_API_KEY"
 echo "   2. Start MongoDB (if not running):"
 echo "      docker run -d -p 27017:27017 --name mongodb mongo:latest"
-echo "   3. Seed the database:"
-echo "      cd backend && npm run seed"
-echo "   4. Start the backend:"
+echo "   3. Start the backend:"
 echo "      cd backend && npm run dev"
-echo "   5. In a new terminal, start the frontend:"
+echo "   4. In a new terminal, start the frontend:"
 echo "      cd frontend && npm run dev"
 echo ""
 echo "🌐 The app will be available at:"

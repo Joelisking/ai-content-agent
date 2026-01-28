@@ -9,6 +9,7 @@ import {
   Platform,
 } from '../models';
 import { aiAgent } from './aiAgent.service';
+import { emailService } from './email.service';
 
 interface ScheduledGeneration {
   brandId: string;
@@ -331,6 +332,25 @@ export class ContentSchedulerService {
           autoGenerateImage: schedule?.autoGenerateImage,
         },
       });
+
+      // Send email notification if approvers are configured
+      if (brand.approverEmails?.length > 0) {
+        emailService
+          .sendApprovalNotification(brand.approverEmails, {
+            brandName: brand.name,
+            platform: task.platform,
+            contentPreview: generated.text,
+            contentId: content._id.toString(),
+          })
+          .then(() => {
+            console.log(
+              `📧 Email notification sent for scheduled content: ${content._id}`,
+            );
+          })
+          .catch((err) =>
+            console.error('Failed to send approval notification:', err),
+          );
+      }
 
       console.log(
         `✅ Auto-generated ${task.platform} content for ${task.brandName}`,

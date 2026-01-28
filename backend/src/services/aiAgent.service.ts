@@ -408,12 +408,37 @@ REASONING:
       request.platform,
     );
 
+    // Generate image if requested
+    let imageUrl: string | undefined;
+    let imagePrompt: string | undefined;
+    let imageError: string | undefined;
+
+    if (request.generateImage) {
+      try {
+        const imageResult = await this.generateImageForContent(
+          content,
+          request.platform,
+        );
+        imageUrl = imageResult.imageUrl;
+        imagePrompt = imageResult.imagePrompt;
+        if (imageResult.error) {
+          imageError = imageResult.error;
+        }
+      } catch (err) {
+        imageError = err instanceof Error ? err.message : 'Unknown error';
+        console.error('Image generation failed during regenerate:', imageError);
+      }
+    }
+
     return {
       text: content,
       hashtags,
       reasoning: reasoningMatch
         ? reasoningMatch[1].trim()
         : 'No reasoning provided',
+      imageUrl,
+      imagePrompt,
+      imageError,
       metadata: {
         model: 'claude-sonnet-4-20250514',
         temperature: 0.7,
@@ -547,6 +572,41 @@ REASONING:
           'Image analysis failed: ' +
           (error instanceof Error ? error.message : String(error)),
         tags: [],
+      };
+    }
+  }
+
+  /**
+   * Generate an image for existing content
+   */
+  async generateImageForContent(
+    contentText: string,
+    platform: Platform,
+  ): Promise<{ imageUrl?: string; imagePrompt?: string; error?: string }> {
+    try {
+      this.log('Generating image for existing content...');
+
+      // Generate image prompt based on content
+      const imagePrompt = await imageGenerationService.generateImagePrompt(
+        contentText,
+        platform,
+        'Generate a visually compelling image for this social media post',
+      );
+
+      // Generate image using DALL-E 3
+      const imageResult = await imageGenerationService.generateImage(
+        imagePrompt,
+        platform,
+      );
+
+      return {
+        imageUrl: imageResult.cloudinaryUrl,
+        imagePrompt,
+      };
+    } catch (error) {
+      console.error('❌ Image generation failed:', error);
+      return {
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
