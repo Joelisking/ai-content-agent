@@ -89,7 +89,7 @@ export const ApprovalQueueItem: React.FC<ApprovalQueueItemProps> = ({
                             typeof media === 'object' && (media as any).path ? (
                                 <div key={index} className="relative flex-none w-48 h-32 bg-muted rounded-lg overflow-hidden border">
                                     <Image
-                                        src={(media as any).path.startsWith('http') ? (media as any).path : `http://localhost:4000/${(media as any).path.replace(/^\.\//, '')}`}
+                                        src={(media as any).path.startsWith('http') ? (media as any).path : `/uploads/${(media as any).path.replace(/^\.\//, '').replace(/^uploads\//, '')}`}
                                         alt={(media as any).originalName || 'Media'}
                                         fill
                                         className="object-cover transition-transform hover:scale-105"

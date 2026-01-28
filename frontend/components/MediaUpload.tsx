@@ -86,8 +86,8 @@ export const MediaUpload: React.FC = () => {
     if (path.startsWith('http') || path.startsWith('https')) return path;
     // Handle paths that might already be absolute but local? Unlikely.
     // Ensure we don't double slash if path starts with /
-    const cleanPath = path.replace(/^\.\//, '').replace(/^\//, '');
-    return `http://localhost:4000/${cleanPath}`;
+    const cleanPath = path.replace(/^\.\//, '').replace(/^\//, '').replace(/^uploads\//, '');
+    return `/uploads/${cleanPath}`;
   };
 
   return (

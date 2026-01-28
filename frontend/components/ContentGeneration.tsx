@@ -283,8 +283,8 @@ export const ContentGeneration: React.FC = () => {
 
   const getImageUrl = (path: string) => {
     if (path.startsWith('http') || path.startsWith('https')) return path;
-    const cleanPath = path.replace(/^\.\//, '').replace(/^\//, '');
-    return `http://localhost:4000/${cleanPath}`;
+    const cleanPath = path.replace(/^\.\//, '').replace(/^\//, '').replace(/^uploads\//, '');
+    return `/uploads/${cleanPath}`;
   };
 
   return (
