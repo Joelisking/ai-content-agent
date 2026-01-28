@@ -71,12 +71,12 @@ A production AI system needs operational safeguards. We implemented a **System C
 
 The `SystemControl` model acts as a global traffic light:
 
-| Mode            | Behavior                                                               | Use Case                                                   |
-| :-------------- | :--------------------------------------------------------------------- | :--------------------------------------------------------- |
-| **ACTIVE**      | Normal operation. Cron job runs. Manual posting allowed.               | Standard daily operation.                                  |
-| **PAUSED**      | **Cron Job Skips**. No auto-posting. Manual posting still allowed.     | Maintenance or low-monitoring periods.                     |
-| **MANUAL-ONLY** | **Cron Job Skips**. AI generates drafts, but humans must click "Post". | Testing new prompts or distrust in current AI performance. |
-| **CRISIS**      | **TOTAL LOCKDOWN**. All posting API calls throw errors.                | PR disaster or major bug.                                  |
+| Mode            | Behavior                                                                          | Use Case                                            |
+| :-------------- | :-------------------------------------------------------------------------------- | :-------------------------------------------------- |
+| **ACTIVE**      | Normal operation. Cron job runs. Manual posting allowed.                          | Standard daily operation.                           |
+| **PAUSED**      | **Total Pause**. Content Generation BLOCKED. Auto-posting BLOCKED.                | Maintenance or low-monitoring periods.              |
+| **MANUAL-ONLY** | **Output Pause**. AI generates drafts (Inputs allowed), but Auto-posting BLOCKED. | Testing new prompts or high-oversight requirements. |
+| **CRISIS**      | **TOTAL LOCKDOWN**. All posting API calls throw errors.                           | PR disaster or major bug.                           |
 
 ### Implementation Detail
 

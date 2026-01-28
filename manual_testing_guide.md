@@ -102,23 +102,41 @@ This guide allows you to manually verify every feature of the AI Content Agent, 
 
 ### Test Steps:
 
-1. Navigate to **System Control** / **Settings**.
-2. **Test Pause Mode**:
-   - Switch mode to **PAUSED**.
-   - Go to Approval Queue.
-   - Try to **Post Now** an item.
-   - **Verify**: Action is blocked/error message "System is in PAUSED mode".
-   - **Verify**: Cron job should not pick up scheduled posts (wait 1 min to confirm).
-3. **Test Manual-Only Mode**:
-   - Switch mode to **MANUAL-ONLY**.
-   - **Verify**: Auto-posting (Cron) is disabled.
-   - **Verify**: **Post Now** button still works manually.
-4. **Test Crisis Mode**:
-   - Switch mode to **CRISIS**.
-   - **Verify**: **Post Now** is blocked.
-   - **Verify**: Generation might be blocked (depending on implementation).
-   - **Verify**: Big red banner/warning is visible.
-5. **Reset**: Switch back to **ACTIVE** mode.
+1. Navigate to **System Control** in the sidebar.
+2. **Test Active Mode** (Default):
+   - **Verify**: Mode is **ACTIVE**.
+   - **Action**: Schedule a post for 1 minute in the future.
+   - **Verify**: Post is automatically published when time arrives.
+
+3. **Test Pause Mode**:
+   - **Action**: Switch mode to **PAUSED** and provide a reason.
+   - **Test Manual Generation**: Go to "Generate", try to generate new content.
+     - **Verify**: FAILS with error "System paused".
+   - **Test Scheduled Drafting**: (Logic Check) Scheduled draft generation is BLOCKED.
+   - **Test Auto-Posting**: Schedule a pending post for now.
+     - **Verify**: Post remains in `SCHEDULED` status (Cron is stopped).
+   - **Test Manual Override**: Go to Approved tab, click **Post Now**.
+     - **Verify**: SUCCEEDS (Manual override allowed).
+
+4. **Test Manual-Only Mode**:
+   - **Action**: Switch mode to **MANUAL-ONLY**.
+   - **Test Manual Generation**: Try to generate content.
+     - **Verify**: WORKS (Drafts allowed).
+   - **Test Auto-Posting**: Schedule a post for now or wait for a scheduled time.
+     - **Verify**: Post remains in `SCHEDULED` status (Auto-posting blocked).
+   - **Test Manual Override**: Click **Post Now**.
+     - **Verify**: SUCCEEDS.
+   - **Key Distinction**: The system continues to "think" (generate drafts if scheduled) but cannot "act" (post) without you.
+
+5. **Test Crisis Mode**:
+   - **Action**: Switch mode to **CRISIS** (requires confirmation).
+   - **Test Generation**: Try to generate.
+     - **Verify**: FAILS with "System in crisis mode".
+   - **Test Posting**: Try to **Post Now**.
+     - **Verify**: FAILS with "System in crisis mode - all posting blocked".
+     - **Verify**: UI shows prominent red warning/status.
+
+6. **Reset**: Switch back to **ACTIVE** mode.
 
 ---
 

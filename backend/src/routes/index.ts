@@ -958,6 +958,17 @@ router.put('/content/:id', async (req, res) => {
 router.post('/content/:id/approve', async (req, res) => {
   try {
     const { approvedBy, scheduledFor } = req.body;
+
+    // Check system mode - block approvals in crisis
+    const systemControl = await SystemControl.findOne().sort({
+      lastChangedAt: -1,
+    });
+    if (systemControl?.mode === 'crisis') {
+      return res.status(503).json({
+        error: 'System in crisis mode - approvals blocked',
+      });
+    }
+
     const content = await ContentQueue.findById(req.params.id);
 
     if (!content) {

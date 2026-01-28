@@ -83,11 +83,19 @@ export const Dashboard: React.FC = () => {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Auto-Posting</CardTitle>
-            <div className={`h-2 w-2 rounded-full ${stats.system.autoPostingEnabled ? 'bg-green-500' : 'bg-destructive'}`} />
+            <div className={`h-2 w-2 rounded-full ${stats.system.mode === 'active' && stats.system.autoPostingEnabled ? 'bg-green-500' : 'bg-destructive'}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.system.autoPostingEnabled ? 'ENABLED' : 'DISABLED'}</div>
-            <p className="text-xs text-muted-foreground">Automatic content publishing</p>
+            <div className="text-2xl font-bold">
+              {stats.system.mode === 'active'
+                ? (stats.system.autoPostingEnabled ? 'ENABLED' : 'DISABLED')
+                : 'STOPPED'}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {stats.system.mode === 'active'
+                ? 'Automatic content publishing'
+                : `Overridden by ${stats.system.mode} mode`}
+            </p>
           </CardContent>
         </Card>
       </div>

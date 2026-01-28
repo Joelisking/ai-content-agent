@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState, useEffect, useRef } from 'react';
 import { FaMagic, FaLinkedin, FaInstagram, FaTwitter, FaFacebook, FaImage, FaSave, FaEdit, FaCloudUploadAlt, FaTimes } from 'react-icons/fa';
 import { apiClient, Brand, MediaUpload as MediaType, Content } from '../lib/api/client';
@@ -145,9 +147,10 @@ export const ContentGeneration: React.FC = () => {
         }
       }, 180000);
 
-    } catch (error) {
-      console.error('Error starting content generation:', error);
-      toast.error('Failed to start content generation. Check console for details.');
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.error || error.message || 'Unknown error';
+      console.log('Content generation error:', errorMessage); // Log as string to avoid error overlay
+      toast.error(`Failed to generate content: ${errorMessage}`);
       setGenerating(false);
     }
   };
