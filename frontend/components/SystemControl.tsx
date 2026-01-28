@@ -278,7 +278,7 @@ export const SystemControl: React.FC = () => {
           <CardDescription>Configuration parameters for the automation engine</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-2 gap-6">
             <div className="p-4 rounded-lg bg-muted/50 border">
               <div className="text-sm text-muted-foreground mb-1">Auto-Posting</div>
               <div className="text-xl font-semibold flex items-center gap-2">
@@ -302,12 +302,12 @@ export const SystemControl: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-4 rounded-lg bg-muted/50 border">
+            {/* <div className="p-4 rounded-lg bg-muted/50 border">
               <div className="text-sm text-muted-foreground mb-1">Daily Post Limit</div>
               <div className="text-xl font-semibold">
                 {control.settings.maxDailyPosts} <span className="text-sm text-muted-foreground font-normal">posts/day</span>
               </div>
-            </div>
+            </div> */}
           </div>
 
           {control.reason && (

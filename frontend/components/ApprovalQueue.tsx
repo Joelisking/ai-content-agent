@@ -240,16 +240,21 @@ export const ApprovalQueue: React.FC = () => {
 
   const handlePostNowSubmit = async () => {
     if (!selectedPostNowId) return;
-    setLoading(true);
+
+    // Close modal immediately
+    setPostNowModalOpen(false);
+
+    // Show feedback
+    toast.info('Posting content...');
+
     try {
       await apiClient.postContent(selectedPostNowId, 'admin');
       toast.success('Content posted!');
-      setPostNowModalOpen(false);
       await fetchContent();
     } catch (error: any) {
       toast.error('Failed to post: ' + (error?.response?.data?.error || error.message));
-    } finally {
-      setLoading(false);
+      // Refresh to ensure state is consistent
+      fetchContent();
     }
   };
 

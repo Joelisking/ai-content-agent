@@ -137,6 +137,10 @@ export interface SystemControl {
     requireApprovalForAll: boolean;
     maxDailyPosts: number;
   };
+  systemConnections?: {
+    linkedin: boolean;
+    instagram: boolean;
+  };
 }
 
 export interface DashboardStats {
