@@ -25,6 +25,7 @@ export const ContentGeneration: React.FC = () => {
   const [userPrompt, setUserPrompt] = useState('');
   const [generateImage, setGenerateImage] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [generationStep, setGenerationStep] = useState('');
   const [generatedContent, setGeneratedContent] = useState<Content | null>(null);
 
   // Editing state
@@ -127,7 +128,13 @@ export const ContentGeneration: React.FC = () => {
           } else if (content.generationStatus === 'failed') {
             clearInterval(pollInterval);
             setGenerating(false);
+            setGenerationStep('');
             toast.error(content.generationError || 'Content generation failed');
+          } else if (content.generationStatus === 'generating') {
+            // Update step while generating
+            if (content.generationStep) {
+              setGenerationStep(content.generationStep);
+            }
           }
           // If still 'generating', continue polling
         } catch (pollError) {
@@ -463,7 +470,7 @@ export const ContentGeneration: React.FC = () => {
             >
               {generating ? (
                 <>
-                  <FaMagic className="mr-2 animate-spin" /> Generating...
+                  <FaMagic className="mr-2 animate-spin" /> {generationStep || 'Generating...'}
                 </>
               ) : (
                 <>

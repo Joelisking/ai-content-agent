@@ -117,6 +117,7 @@ export interface IContentQueue extends Document {
   };
   status: ContentStatus;
   generationStatus?: GenerationStatus;
+  generationStep?: string;
   generationError?: string;
   brandConfigId: string;
   generatedBy: 'ai' | 'manual';
@@ -176,6 +177,7 @@ const ContentQueueSchema = new Schema<IContentQueue>(
       type: String,
       enum: ['generating', 'completed', 'failed'],
     },
+    generationStep: { type: String },
     generationError: { type: String },
     brandConfigId: { type: String, required: true },
     generatedBy: {

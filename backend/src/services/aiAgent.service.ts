@@ -256,16 +256,23 @@ Return ONLY the hashtags, one per line, with the # symbol.`;
    */
   async generateContent(
     request: ContentGenerationRequest,
+    onStep?: (step: string) => Promise<void>,
   ): Promise<GeneratedContent> {
     try {
       // Step 1: Analyze brand
-      this.log('Step 1: Analyzing brand voice...');
+      const step1 = 'Analyzing brand voice...';
+      this.log(`Step 1: ${step1}`);
+      if (onStep) await onStep(step1);
+
       const brandVoiceAnalysis = await this.analyzeBrandContext(
         request.brandConfig,
       );
 
       // Step 2: Generate content
-      this.log('Step 2: Generating platform content...');
+      // Step 2: Generate content
+      const step2 = 'Drafting content...';
+      this.log(`Step 2: ${step2}`);
+      if (onStep) await onStep(step2);
       const {
         content: generatedText,
         reasoning,
@@ -280,7 +287,10 @@ Return ONLY the hashtags, one per line, with the # symbol.`;
       );
 
       // Step 3: Extract hashtags
-      this.log('Step 3: Optimizing hashtags...');
+      // Step 3: Extract hashtags
+      const step3 = 'Optimizing metadata...';
+      this.log(`Step 3: ${step3}`);
+      if (onStep) await onStep(step3);
       const hashtags = await this.extractHashtags(
         generatedText,
         request.platform,
@@ -290,9 +300,11 @@ Return ONLY the hashtags, one per line, with the # symbol.`;
       let imageUrl: string | undefined;
       let imagePrompt: string | undefined;
       let imageError: string | undefined;
-      // Only generate an image if requested AND the agent didn't select an existing asset
-      if (request.generateImage && !selectedMediaId) {
-        this.log('Step 4: Generating AI image...');
+      // Generate an image if explicitly requested (user request takes priority over agent media selection)
+      if (request.generateImage) {
+        const step4 = 'Generating AI image...';
+        this.log(`Step 4: ${step4}`);
+        if (onStep) await onStep(step4);
         try {
           // Generate image prompt based on content
           imagePrompt =
@@ -352,9 +364,12 @@ Return ONLY the hashtags, one per line, with the # symbol.`;
     feedback: string,
     request: ContentGenerationRequest,
   ): Promise<GeneratedContent> {
+    console.log('[REGENERATE] Starting regeneration...');
+    console.log('[REGENERATE] Analyzing brand context...');
     const brandVoiceAnalysis = await this.analyzeBrandContext(
       request.brandConfig,
     );
+    console.log('[REGENERATE] Brand analysis complete');
     const platformGuidelines = this.getPlatformGuidelines(
       request.platform,
     );
@@ -382,12 +397,14 @@ CONTENT:
 REASONING:
 [Explanation of changes made]`;
 
+    console.log('[REGENERATE] Calling Claude API...');
     const response = await this.getClient().messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1500,
       temperature: 0.7,
       messages: [{ role: 'user', content: prompt }],
     });
+    console.log('[REGENERATE] Claude API response received');
 
     const textContent = response.content.find(
       (block) => block.type === 'text',
@@ -425,8 +442,12 @@ REASONING:
           imageError = imageResult.error;
         }
       } catch (err) {
-        imageError = err instanceof Error ? err.message : 'Unknown error';
-        console.error('Image generation failed during regenerate:', imageError);
+        imageError =
+          err instanceof Error ? err.message : 'Unknown error';
+        console.error(
+          'Image generation failed during regenerate:',
+          imageError,
+        );
       }
     }
 
@@ -582,16 +603,21 @@ REASONING:
   async generateImageForContent(
     contentText: string,
     platform: Platform,
-  ): Promise<{ imageUrl?: string; imagePrompt?: string; error?: string }> {
+  ): Promise<{
+    imageUrl?: string;
+    imagePrompt?: string;
+    error?: string;
+  }> {
     try {
       this.log('Generating image for existing content...');
 
       // Generate image prompt based on content
-      const imagePrompt = await imageGenerationService.generateImagePrompt(
-        contentText,
-        platform,
-        'Generate a visually compelling image for this social media post',
-      );
+      const imagePrompt =
+        await imageGenerationService.generateImagePrompt(
+          contentText,
+          platform,
+          'Generate a visually compelling image for this social media post',
+        );
 
       // Generate image using DALL-E 3
       const imageResult = await imageGenerationService.generateImage(
@@ -606,7 +632,8 @@ REASONING:
     } catch (error) {
       console.error('❌ Image generation failed:', error);
       return {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error:
+          error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }

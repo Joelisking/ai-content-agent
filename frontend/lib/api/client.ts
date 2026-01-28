@@ -99,6 +99,7 @@ export interface Content {
     | 'posted'
     | 'scheduled';
   generationStatus?: 'generating' | 'completed' | 'failed';
+  generationStep?: string;
   generationError?: string;
   brandConfigId: string;
   generatedBy: 'ai' | 'manual';
@@ -144,6 +145,7 @@ export interface DashboardStats {
     pending: number;
     approved: number;
     posted: number;
+    rejected: number;
   };
   media: {
     total: number;

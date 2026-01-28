@@ -405,16 +405,27 @@ async function processGenerationAsync(contentId: string) {
       JSON.stringify(content.metadata),
     );
 
-    const generated = await aiAgent.generateContent({
-      brandConfig,
-      platform: content.platform,
-      mediaContext: mediaContext || undefined,
-      userPrompt: (content.metadata as any)?.userPrompt || undefined,
-      previousContent,
-      generateImage: generateImageFlag,
-      availableMedia:
-        availableMedia.length > 0 ? availableMedia : undefined,
-    });
+    const generated = await aiAgent.generateContent(
+      {
+        brandConfig,
+        platform: content.platform,
+        mediaContext: mediaContext || undefined,
+        userPrompt:
+          (content.metadata as any)?.userPrompt || undefined,
+        previousContent,
+        generateImage: generateImageFlag,
+        availableMedia:
+          availableMedia.length > 0 ? availableMedia : undefined,
+      },
+      async (step) => {
+        // Update generation step in DB
+        // Use $set to avoid type issues with simple object
+        await ContentQueue.findByIdAndUpdate(contentId, {
+          $set: { generationStep: step },
+        });
+        console.log(`[Progress ${contentId}] ${step}`);
+      },
+    );
 
     // If image was generated, save it to MediaUpload and attach to content
     let generatedMediaId: string | undefined;
@@ -453,20 +464,15 @@ async function processGenerationAsync(contentId: string) {
       'metadata.aiMetadata': generated.metadata,
     };
 
-    // Attach generated image if created
+    // Attach generated image if created (takes priority over agent-selected media)
     if (generatedMediaId) {
       console.log('🔗 Attaching generated image to content...');
       updateData['metadata.generatedImageId'] = generatedMediaId;
       updateData['metadata.generatedImageUrl'] = generated.imageUrl;
       updateData['metadata.imagePrompt'] = generated.imagePrompt;
-      // Add to mediaIds if no media was already attached
-      if (
-        !content.content.mediaIds ||
-        content.content.mediaIds.length === 0
-      ) {
-        updateData['content.mediaIds'] = [generatedMediaId];
-        console.log('✅ Image attached to content.mediaIds');
-      }
+      // Always use the generated image when user requested image generation
+      updateData['content.mediaIds'] = [generatedMediaId];
+      console.log('✅ Generated image attached to content.mediaIds');
     } else if (generated.selectedMediaId) {
       // If the agent selected an existing media item
       console.log(
@@ -481,7 +487,7 @@ async function processGenerationAsync(contentId: string) {
 
       if (!currentIdsStr.includes(generated.selectedMediaId)) {
         updateData['content.mediaIds'] = [
-          ...currentMediaIds,
+          ...currentMediaIds.map((id) => id.toString()), // Ensure strings
           generated.selectedMediaId,
         ];
         updateData['metadata.aiSelectedMediaId'] =
@@ -657,102 +663,38 @@ router.post('/content/generate', async (req, res) => {
   }
 });
 
-router.post('/content/:id/regenerate', async (req, res) => {
+// Async function to process regeneration in the background
+async function processRegenerationAsync(
+  contentId: string,
+  feedback: string,
+  newPlatform: string | undefined,
+  generateImage: boolean,
+  performedBy: string,
+) {
   try {
-    const {
-      feedback,
-      platform: newPlatform,
-      generateImage,
-    } = req.body;
-    const content = await ContentQueue.findById(req.params.id);
-
+    console.log(`🔄 [Background] Starting regeneration for ${contentId}`);
+    const content = await ContentQueue.findById(contentId);
     if (!content) {
-      return res.status(404).json({ error: 'Content not found' });
+      console.error(`Content ${contentId} not found for regeneration`);
+      return;
     }
 
-    const brandConfig = await BrandConfig.findById(
-      content.brandConfigId,
-    );
+    const brandConfig = await BrandConfig.findById(content.brandConfigId);
     if (!brandConfig) {
-      return res
-        .status(404)
-        .json({ error: 'Brand configuration not found' });
+      await ContentQueue.findByIdAndUpdate(contentId, {
+        generationStatus: 'failed',
+        generationError: 'Brand configuration not found',
+      });
+      return;
     }
 
-    // Determine target platform
     const targetPlatform = newPlatform || content.platform;
 
-    // If only generating image without regenerating text
-    if (
-      generateImage &&
-      feedback?.includes('keeping the text the same')
-    ) {
-      // Generate image only
-      if (!process.env.OPENAI_API_KEY) {
-        return res.status(400).json({
-          error:
-            'Image generation requires OPENAI_API_KEY to be configured',
-        });
-      }
+    // Update step
+    await ContentQueue.findByIdAndUpdate(contentId, {
+      generationStep: 'Analyzing brand voice...',
+    });
 
-      try {
-        const imageResult = await aiAgent.generateImageForContent(
-          content.content.text,
-          targetPlatform,
-        );
-
-        if (imageResult.imageUrl) {
-          // Save generated image
-          const generatedMedia = new MediaUpload({
-            filename: `ai-generated-${Date.now()}`,
-            originalName: 'AI Generated Image',
-            mimetype: 'image/png',
-            size: 0,
-            path: imageResult.imageUrl,
-            metadata: {
-              aiGenerated: true,
-              imagePrompt: imageResult.imagePrompt,
-            },
-          });
-          await generatedMedia.save();
-
-          content.content.mediaIds = [generatedMedia._id];
-          (content.metadata as any).generatedImageId =
-            generatedMedia._id.toString();
-          (content.metadata as any).generatedImageUrl =
-            imageResult.imageUrl;
-          (content.metadata as any).imagePrompt =
-            imageResult.imagePrompt;
-
-          await content.save();
-
-          await AuditLog.create({
-            action: 'image_generated',
-            performedBy: req.body.performedBy || 'user',
-            entityType: 'content',
-            entityId: content._id.toString(),
-            details: {
-              imagePrompt: imageResult.imagePrompt,
-            },
-          });
-
-          return res.json({
-            ...content.toObject(),
-            message: 'Image generated successfully',
-          });
-        }
-      } catch (imageError) {
-        console.error('Error generating image:', imageError);
-        return res.status(500).json({
-          error:
-            imageError instanceof Error
-              ? imageError.message
-              : 'Failed to generate image',
-        });
-      }
-    }
-
-    // Generate new version
     const regenerated = await aiAgent.regenerateContent(
       content.content.text,
       feedback,
@@ -763,6 +705,8 @@ router.post('/content/:id/regenerate', async (req, res) => {
       },
     );
 
+    console.log(`🔄 [Background] Regeneration complete for ${contentId}`);
+
     // Save previous version
     const previousVersion = {
       version: content.metadata.version,
@@ -771,18 +715,23 @@ router.post('/content/:id/regenerate', async (req, res) => {
       timestamp: new Date(),
     };
 
-    // Update content
-    content.content.text = regenerated.text;
-    content.content.hashtags = regenerated.hashtags;
-    content.metadata.version += 1;
-    if (newPlatform && newPlatform !== content.platform) {
-      content.platform = newPlatform;
-    }
+    // Prepare update data
+    const updateData: any = {
+      'content.text': regenerated.text,
+      'content.hashtags': regenerated.hashtags,
+      'metadata.version': content.metadata.version + 1,
+      status: 'pending',
+      generationStatus: 'completed',
+      generationStep: undefined,
+      'metadata.previousVersions': [
+        ...(content.metadata.previousVersions || []),
+        previousVersion,
+      ],
+    };
 
-    content.metadata.previousVersions =
-      content.metadata.previousVersions || [];
-    content.metadata.previousVersions.push(previousVersion);
-    content.status = 'pending';
+    if (newPlatform && newPlatform !== content.platform) {
+      updateData.platform = newPlatform;
+    }
 
     // Handle generated image
     if (generateImage && regenerated.imageUrl) {
@@ -799,33 +748,76 @@ router.post('/content/:id/regenerate', async (req, res) => {
       });
       await generatedMedia.save();
 
-      content.content.mediaIds = [generatedMedia._id];
-      (content.metadata as any).generatedImageId =
-        generatedMedia._id.toString();
-      (content.metadata as any).generatedImageUrl =
-        regenerated.imageUrl;
-      (content.metadata as any).imagePrompt = regenerated.imagePrompt;
+      updateData['content.mediaIds'] = [generatedMedia._id.toString()];
+      updateData['metadata.generatedImageId'] = generatedMedia._id.toString();
+      updateData['metadata.generatedImageUrl'] = regenerated.imageUrl;
+      updateData['metadata.imagePrompt'] = regenerated.imagePrompt;
     }
 
-    await content.save();
+    await ContentQueue.findByIdAndUpdate(contentId, updateData);
 
     await AuditLog.create({
       action: 'content_regenerated',
-      performedBy: req.body.performedBy || 'user',
+      performedBy: performedBy,
       entityType: 'content',
-      entityId: content._id.toString(),
+      entityId: contentId,
       details: {
         feedback,
-        version: content.metadata.version,
+        version: content.metadata.version + 1,
         imageGenerated: !!generateImage,
       },
     });
 
+    console.log(`🔄 [Background] Regeneration saved for ${contentId}`);
+  } catch (error) {
+    console.error(`🔄 [Background] Regeneration failed for ${contentId}:`, error);
+    await ContentQueue.findByIdAndUpdate(contentId, {
+      generationStatus: 'failed',
+      generationError: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+router.post('/content/:id/regenerate', async (req, res) => {
+  try {
+    const { feedback, platform: newPlatform, generateImage } = req.body;
+    const content = await ContentQueue.findById(req.params.id);
+
+    if (!content) {
+      return res.status(404).json({ error: 'Content not found' });
+    }
+
+    const brandConfig = await BrandConfig.findById(content.brandConfigId);
+    if (!brandConfig) {
+      return res.status(404).json({ error: 'Brand configuration not found' });
+    }
+
+    // Mark content as regenerating
+    await ContentQueue.findByIdAndUpdate(req.params.id, {
+      generationStatus: 'generating',
+      generationStep: 'Starting regeneration...',
+      generationError: undefined,
+    });
+
+    // Fire-and-forget: start regeneration in background
+    processRegenerationAsync(
+      req.params.id,
+      feedback || '',
+      newPlatform,
+      generateImage || false,
+      req.body.performedBy || 'user',
+    ).catch((err) => console.error('Background regeneration error:', err));
+
+    // Return immediately with regenerating status
     res.json({
-      ...content.toObject(),
-      reasoning: regenerated.reasoning,
+      _id: content._id,
+      platform: content.platform,
+      generationStatus: 'generating',
+      status: content.status,
+      message: 'Regeneration started',
     });
   } catch (error) {
+    console.error('🔄 ERROR starting regeneration:', error);
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error',
     });
@@ -1236,12 +1228,14 @@ router.get('/dashboard/stats', async (req, res) => {
       pendingContent,
       approvedContent,
       postedContent,
+      rejectedContent,
       totalMedia,
     ] = await Promise.all([
       ContentQueue.countDocuments(),
       ContentQueue.countDocuments({ status: 'pending' }),
       ContentQueue.countDocuments({ status: 'approved' }),
       ContentQueue.countDocuments({ status: 'posted' }),
+      ContentQueue.countDocuments({ status: 'rejected' }),
       MediaUpload.countDocuments(),
     ]);
 
@@ -1255,6 +1249,7 @@ router.get('/dashboard/stats', async (req, res) => {
         pending: pendingContent,
         approved: approvedContent,
         posted: postedContent,
+        rejected: rejectedContent,
       },
       media: {
         total: totalMedia,

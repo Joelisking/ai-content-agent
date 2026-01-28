@@ -33,14 +33,14 @@ const navigation: NavigationItem[] = [
     { href: '/admin/users', name: 'Team', icon: FaUsers },
 ];
 
-export function Sidebar() {
+export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     const pathname = usePathname();
     const { logout } = useAuth();
 
     return (
         <div className="flex flex-col h-full bg-sidebar border-r border-sidebar-border">
             <div className="p-6">
-                <Link href="/">
+                <Link href="/" onClick={onNavigate}>
                     <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent hover:opacity-80 transition-opacity">
                         AI Content Agent
                     </h1>
@@ -63,6 +63,7 @@ export function Sidebar() {
                                     isActive && "bg-sidebar-accent text-sidebar-accent-foreground"
                                 )}
                                 asChild
+                                onClick={onNavigate}
                             >
                                 <Link href={item.href}>
                                     <Icon className="text-lg" />

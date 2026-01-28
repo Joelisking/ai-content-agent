@@ -27,7 +27,7 @@ graph TD
         AIService -->|Stores| DB
     end
 
-    PostingService -.->|Simulated| SocialAPIs[Social Media APIs]
+    PostingService -.->|Partly Simulated| SocialAPIs[Social Media APIs]
 ```
 
 ### Key Components

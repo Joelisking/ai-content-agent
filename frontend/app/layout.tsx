@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
-import { Sidebar } from "@/components/Sidebar";
-import { MobileNav } from "@/components/MobileNav";
+import { AppShell } from "@/components/AppShell";
 
 
 import { AuthProvider } from "@/context/AuthContext";
@@ -34,23 +33,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground selection:bg-primary/20`}
       >
         <AuthProvider>
-          <div className="min-h-screen flex">
-            {/* Desktop Sidebar */}
-            <aside className="hidden lg:block w-64 h-screen sticky top-0">
-              <Sidebar />
-            </aside>
-
-            <div className="flex-1 flex flex-col min-h-screen">
-              <MobileNav />
-
-              {/* Main Content */}
-              <main className="flex-1 p-4 lg:p-8 pt-4 lg:pt-8 w-full max-w-7xl mx-auto overflow-x-hidden">
-                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  {children}
-                </div>
-              </main>
-            </div>
-          </div>
+          <AppShell>
+            {children}
+          </AppShell>
           <Toaster />
         </AuthProvider>
       </body>

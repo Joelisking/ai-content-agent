@@ -1,26 +1,46 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import { BrandConfig, SystemControl } from '../models';
+import {
+  BrandConfig,
+  SystemControl,
+  User,
+  ContentQueue,
+  AuditLog,
+  MediaUpload,
+} from '../models';
+import bcrypt from 'bcryptjs';
 
 dotenv.config();
 
 const seedData = async () => {
   try {
-    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/ai-content-agent';
+    const mongoUri =
+      process.env.MONGODB_URI ||
+      'mongodb://localhost:27017/ai-content-agent';
     await mongoose.connect(mongoUri);
     console.log('✅ Connected to MongoDB');
 
-    // Clear existing data (optional - comment out if you want to keep existing data)
+    // Clear existing data
+    await User.deleteMany({});
     await BrandConfig.deleteMany({});
     await SystemControl.deleteMany({});
-    console.log('🗑️  Cleared existing data');
+    await ContentQueue.deleteMany({});
+    await AuditLog.deleteMany({});
+    await MediaUpload.deleteMany({});
+    console.log('🗑️  Cleared ALL existing data');
 
     // Create sample brand configuration
     const brand = await BrandConfig.create({
       name: 'TechFlow Innovations',
       industry: 'Technology / SaaS',
-      voiceTone: ['professional', 'innovative', 'approachable', 'data-driven'],
-      targetAudience: 'Software developers, tech leaders, and startup founders aged 25-45',
+      voiceTone: [
+        'professional',
+        'innovative',
+        'approachable',
+        'data-driven',
+      ],
+      targetAudience:
+        'Software developers, tech leaders, and startup founders aged 25-45',
       keyMessages: [
         'Empowering developers with AI-powered tools',
         'Making complex technology accessible',
@@ -57,6 +77,24 @@ const seedData = async () => {
     console.log(`   Industry: ${brand.industry}`);
     console.log(`   ID: ${brand._id}`);
     console.log('\n💡 Use this Brand ID when generating content');
+
+    // Create Admin User
+    const adminEmail = 'adujoel7@gmail.com';
+    const existingAdmin = await User.findOne({ email: adminEmail });
+    if (!existingAdmin) {
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash('Pass123$1', salt);
+
+      await User.create({
+        email: adminEmail,
+        passwordHash,
+        name: 'Joel Admin',
+        role: 'admin',
+      });
+      console.log('✅ Created admin user:', adminEmail);
+    } else {
+      console.log('ℹ️ Admin user already exists');
+    }
 
     await mongoose.connection.close();
     process.exit(0);

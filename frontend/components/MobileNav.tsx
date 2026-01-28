@@ -5,13 +5,19 @@ import { Button } from '@/components/ui/button';
 import { FaBars } from 'react-icons/fa';
 import { Sidebar } from './Sidebar';
 
-export function MobileNav() {
+interface MobileNavProps {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    onNavigate: () => void;
+}
+
+export function MobileNav({ open, onOpenChange, onNavigate }: MobileNavProps) {
     return (
         <div className="lg:hidden sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border p-4 flex items-center justify-between">
             <h1 className="font-bold text-lg bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
                 AI Agent
             </h1>
-            <Sheet>
+            <Sheet open={open} onOpenChange={onOpenChange}>
                 <SheetTrigger asChild>
                     <Button variant="ghost" size="icon">
                         <FaBars className="h-5 w-5" />
@@ -19,7 +25,7 @@ export function MobileNav() {
                 </SheetTrigger>
                 <SheetContent side="left" className="p-0 w-64 border-r-sidebar-border bg-sidebar text-sidebar-foreground">
                     <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
-                    <Sidebar />
+                    <Sidebar onNavigate={onNavigate} />
                 </SheetContent>
             </Sheet>
         </div>

@@ -126,12 +126,32 @@ export const ApprovalQueue: React.FC = () => {
 
     setLoading(true);
     try {
-      await apiClient.approveContent(selectedApproveId, 'admin', scheduledFor);
-      toast.success(scheduledFor ? 'Content scheduled!' : 'Content approved!');
+      const response = await apiClient.approveContent(selectedApproveId, 'admin', scheduledFor);
+      const data = response.data as any;
+
+      if (data.posted === false && data.postingError) {
+        // Content approved but posting failed
+        toast.warning(`Content approved but posting failed: ${data.postingError}`);
+      } else if (data.posted === true) {
+        toast.success('Content approved and posted!');
+      } else {
+        toast.success(scheduledFor ? 'Content scheduled!' : 'Content approved!');
+      }
+
       setApproveModalOpen(false);
       await fetchContent();
     } catch (error: any) {
-      const msg = error?.response?.data?.error || 'Failed to approve';
+      const responseData = error?.response?.data;
+
+      // Handle 422 - content approved but posting failed
+      if (error?.response?.status === 422 && responseData?.postingError) {
+        toast.warning(`Content approved but posting failed: ${responseData.postingError}`);
+        setApproveModalOpen(false);
+        await fetchContent();
+        return;
+      }
+
+      const msg = responseData?.error || responseData?.message || 'Failed to approve';
       toast.error(msg);
     } finally {
       setLoading(false);
@@ -165,14 +185,48 @@ export const ApprovalQueue: React.FC = () => {
   const handleRegenerateSubmit = async () => {
     if (!selectedRegenerateId) return;
     setLoading(true);
+    setRegenerateModalOpen(false);
+
     try {
+      // Start regeneration - returns immediately
       await apiClient.regenerateContent(selectedRegenerateId, regenerateFeedback, 'admin');
-      toast.info('Content regenerating...');
-      setRegenerateModalOpen(false);
-      await fetchContent();
+      toast.info('Regenerating content...');
+
+      // Poll for completion every 2 seconds
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusResponse = await apiClient.getContentById(selectedRegenerateId);
+          const updatedContent = statusResponse.data;
+
+          if (updatedContent.generationStatus === 'completed') {
+            clearInterval(pollInterval);
+            setLoading(false);
+            toast.success('Content regenerated successfully!');
+            await fetchContent();
+          } else if (updatedContent.generationStatus === 'failed') {
+            clearInterval(pollInterval);
+            setLoading(false);
+            toast.error(updatedContent.generationError || 'Regeneration failed');
+            await fetchContent();
+          }
+          // If still 'generating', continue polling
+        } catch (pollError) {
+          console.error('Error polling regeneration status:', pollError);
+          clearInterval(pollInterval);
+          setLoading(false);
+          toast.error('Failed to check regeneration status');
+        }
+      }, 2000);
+
+      // Safety timeout: stop polling after 3 minutes
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        setLoading(false);
+        fetchContent();
+      }, 180000);
+
     } catch (error) {
-      toast.error('Failed to regenerate content');
-    } finally {
+      toast.error('Failed to start regeneration');
       setLoading(false);
     }
   };
@@ -391,7 +445,7 @@ export const ApprovalQueue: React.FC = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setApproveModalOpen(false)}>Cancel</Button>
             <Button onClick={handleApproveSubmit} className="bg-green-600 hover:bg-green-700 text-white">
-              {scheduleDate ? 'Schedule' : 'Approve Now'}
+              {scheduleDate ? 'Schedule' : 'Approve & Post Now'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -416,7 +470,15 @@ export const ApprovalQueue: React.FC = () => {
           <Textarea value={regenerateFeedback} onChange={e => setRegenerateFeedback(e.target.value)} placeholder="Feedback..." />
           <DialogFooter>
             <Button variant="outline" onClick={() => setRegenerateModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleRegenerateSubmit}>Regenerate</Button>
+            <Button onClick={handleRegenerateSubmit} disabled={loading}>
+              {loading ? (
+                <>
+                  <FaSync className="mr-2 h-4 w-4 animate-spin" /> Regenerating...
+                </>
+              ) : (
+                'Regenerate'
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
